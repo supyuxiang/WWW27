@@ -15,36 +15,38 @@ SYSTEM_PROMPT = (
 
 ASSISTANT_PREFILL = "Best answer: ["
 
-WHERE = {
+WHETHER_RETRIEVAL = {
     'retrieval': 'Retrieve external evidence.',
     'skip':'Skip external retireval.'
 }
-WHICH = {
-    item.name:item.definition for item in ASPECTS
+WHAT_ASPECT = {
+    item.name: item.definition for item in ASPECTS
 }
-WHAT = {
-    bench.name:bench.choice_dict for bench in BENCHMARKS
+WHICH_CHOICE = {
+    bench.name: bench.choice_dict for bench in BENCHMARKS
 }
 
 
-# _GATE_PAIRS = (
-#     ("skip", "Skip external retrieval."),
-#     ("retrieve", "Retrieve external evidence."),
-# )
-# _ASPECT_PAIRS = (
-#     ("check", "Check this aspect using external evidence."),
-#     ("skip", "Skip investigation of this aspect."),
-# )
-# _JUDGE_PAIRS = (
-#     (
-#         "real",
-#         "Real: the central factual content is substantially accurate under the task definition.",
-#     ),
-#     (
-#         "fake",
-#         "Fake: the central factual content is materially false or misleading under the task definition.",
-#     ),
-# )
+
+def prompt4whether_retrieval(
+    claim:str, current_evidence:str | None=None
+) -> tuple[str, str, list[str]]: # system_prompt, user_prompt, options
+    system_prompt = SYSTEM_PROMPT
+    user_prompt = f'Claim"{claim}.'
+    if current_evidence is not None:
+        user_prompt += f'\nCurrent evidence:{current_evidence}'
+    user_prompt += ("Decide whether more external evidence is needed to assess the central factual content, then select one:\n "
+                    '[1] Need more evidence.\n'
+                    '[2] Do not need more evidence.'
+                    )
+    options = ['1','2']
+    return system_prompt, user_prompt, options
+
+def prompt4what_aspect():
+    pass
+
+def prompt4what_choice():
+    pass
 
 
 def _options(
