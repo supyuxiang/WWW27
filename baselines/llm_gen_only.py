@@ -1,0 +1,280 @@
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+import time
+from collections import Counter
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from src.prompts import SYSTEM_PROMPT
+from jev_only import load_benchmark
+
+os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")
+from vllm import LLM, SamplingParams
+
+PROMPT = (
+    "Claim: {claim}\n"
+    "Decide whether the claim is Real or Fake. "
+    "Put your final answer in \\boxed{{Real}} or \\boxed{{Fake}}."
+)
+
+_ANSWER_RE = re.compile(r"\b(real|fake|true|false)\b", re.IGNORECASE)
+_LATEX_WRAPPER_RE = re.compile(r"\\(?:text|mathrm|textbf)\s*\{([^{}]*)\}")
+
+
+def _boxed_values(text: str) -> list[str]:
+    """Extract balanced \\boxed{...} contents, including nested \\text{...}."""
+    values: list[str] = []
+    cursor = 0
+    while True:
+        marker = text.find("\\boxed", cursor)
+        if marker < 0:
+            break
+        opening = text.find("{", marker)
+        if opening < 0:
+            break
+        depth = 0
+        for index in range(opening, len(text)):
+            char = text[index]
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    values.append(text[opening + 1 : index])
+                    cursor = index + 1
+                    break
+        else:
+            break
+    return values
+
+
+def _normalize_answer(value: str) -> str | None:
+    match = _ANSWER_RE.search(value or "")
+    if not match:
+        return None
+    word = match.group(1).lower()
+    return "real" if word in {"real", "true"} else "fake"
+
+
+def parse_generation(text: str) -> str | None:
+    """Read the final \\boxed{Real/Fake} answer.
+
+    Only a boxed final answer is accepted; free-form reasoning frequently
+    mentions both labels and must not be mistaken for the conclusion.
+    """
+    boxed = _boxed_values(text or "")
+    if not boxed:
+        return None
+    value = boxed[-1]
+    for _ in range(2):
+        value = _LATEX_WRAPPER_RE.sub(r"\1", value)
+    return _normalize_answer(value)
+
+
+class VLLMGenerator:
+    """Batched offline generation with vLLM."""
+
+    def __init__(
+        self,
+        model_path: str,
+        tensor_parallel_size: int,
+        gpu_memory_utilization: float,
+        max_model_len: int,
+        enable_thinking: bool = False,
+    ):
+        self.enable_thinking = enable_thinking
+        self.llm = LLM(
+            model=model_path,
+            tensor_parallel_size=tensor_parallel_size,
+            gpu_memory_utilization=gpu_memory_utilization,
+            max_model_len=max_model_len,
+            dtype="bfloat16",
+        )
+        self.tokenizer = self.llm.get_tokenizer()
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+        if self.tokenizer.pad_token_id is None:
+            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+
+    def _render(self, user: str) -> str:
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user},
+        ]
+        return self.tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=self.enable_thinking,
+            )
+
+    def generate_batch(self, prompts: list[str], max_new_tokens: int) -> list[str]:
+        rendered = [self._render(prompt) for prompt in prompts]
+        sp = SamplingParams(
+            temperature=0.0,
+            max_tokens=max_new_tokens,
+            skip_special_tokens=True,
+        )
+        outputs = self.llm.generate(rendered, sp)
+        texts: list[str] = []
+        for output in outputs:
+            assert outputs
+            texts.append(output.outputs[0].text.strip()) # for temperature=0
+        return texts
+
+
+def run_one(
+    name: str,
+    examples: list[dict],
+    model_path: str,
+    output_dir: Path,
+    generator: VLLMGenerator,
+    batch_size: int,
+    max_new_tokens: int,
+) -> dict:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / f"llm_gen_only_{name}.jsonl"
+    started = time.perf_counter()
+    gold: list[str] = []
+    pred: list[str] = []
+    invalid = 0
+    latencies: list[float] = []
+    with output_path.open("w", encoding="utf-8") as handle:
+        for batch_start in range(0, len(examples), batch_size):
+            batch = examples[batch_start : batch_start + batch_size]
+            prompts = [PROMPT.format(claim=item["claim"]) for item in batch]
+            batch_started = time.perf_counter()
+            texts = generator.generate_batch(prompts, max_new_tokens)
+            
+            batch_elapsed = time.perf_counter() - batch_started
+            per_item_latency = batch_elapsed / len(batch)
+
+            for offset, (example, text) in enumerate(zip(batch, texts)):
+                index = batch_start + offset + 1
+                prediction = parse_generation(text)
+                if prediction is None:
+                    prediction = 'invalid'
+                    invalid +=1
+                gold.append(example["gold"])
+                pred.append(prediction)
+                latencies.append(per_item_latency)
+                handle.write(
+                    json.dumps(
+                        {
+                            "benchmark": name,
+                            "id": example["id"],
+                            "claim": example["claim"],
+                            "gold": example["gold"],
+                            "prediction": prediction,
+                            "generation": text or None,
+                            "latency_s": per_item_latency,
+                            "retrieved": False,
+                            "search_calls": 0,
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+                handle.flush()
+                if index % 25 == 0 or index == len(examples):
+                    print(f"{name}: {index}/{len(examples)}", flush=True)
+    elapsed = time.perf_counter() - started
+    correct = sum(g == p for g, p in zip(gold, pred))
+    summary = {
+        "benchmark": name,
+        "model": model_path,
+        "retrieval": "none",
+        "backend": "vllm",
+        "decoding": (
+            f"greedy, max_new_tokens={max_new_tokens}, "
+            f"submit_batch_size={batch_size}, vLLM continuous batching"
+        ),
+        "n": len(gold),
+        "invalid": invalid,
+        "accuracy": correct / len(gold) if gold else 0.0,
+        "gold_counts": dict(Counter(gold)),
+        "prediction_counts": dict(Counter(pred)),
+        "elapsed_s": elapsed,
+        "avg_latency_s": sum(latencies) / len(latencies) if latencies else 0.0,
+        "output": str(output_path),
+    }
+    (output_dir / f"llm_gen_only_{name}.summary.json").write_text(
+        json.dumps(summary, indent=2), encoding="utf-8"
+    )
+    print(json.dumps(summary, indent=2), flush=True)
+    return summary
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="No-retrieval generation baseline")
+    parser.add_argument("--benchmarks", nargs="+", default=["averitec", "fever", "scifact"])
+    parser.add_argument("--model", default="/root/autodl-tmp/models/Qwen3-8B")
+    parser.add_argument("--limit", type=int, default=-1)
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--output-dir", default="/root/www27/output")
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=128,
+        help="request-submission chunk size; 0 submits all prompts in one vLLM generate() call",
+    )
+    parser.add_argument("--max-new-tokens", type=int, default=1024)
+    parser.add_argument("--tensor-parallel-size", type=int, default=1)
+    parser.add_argument("--gpu-memory-utilization", type=float, default=0.90)
+    parser.add_argument("--max-model-len", type=int, default=8192)
+    parser.add_argument(
+        "--enable-thinking",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable Qwen3 thinking mode in the chat template (default: on)",
+    )
+    args = parser.parse_args()
+
+    output_dir = Path(args.output_dir)
+    generator = VLLMGenerator(
+        model_path=args.model,
+        tensor_parallel_size=args.tensor_parallel_size,
+        gpu_memory_utilization=args.gpu_memory_utilization,
+        max_model_len=args.max_model_len,
+        enable_thinking=args.enable_thinking,
+    )
+    summaries = {}
+    for name in args.benchmarks:
+        examples = load_benchmark(name, args.limit, args.seed)
+        print(f"{name}: {len(examples)} binary claims", flush=True)
+        summaries[name] = run_one(
+            name,
+            examples,
+            args.model,
+            output_dir,
+            generator,
+            args.batch_size,
+            args.max_new_tokens,
+        )
+    (output_dir / "llm_gen_only_summary.json").write_text(
+        json.dumps(summaries, indent=2), encoding="utf-8"
+    )
+    lines = [
+        "# No-retrieval LLM-Gen baseline",
+        "",
+        "| Benchmark | n | Accuracy | Invalid |",
+        "|---|---:|---:|---:|",
+    ]
+    for name, summary in summaries.items():
+        lines.append(
+            f"| {name} | {summary['n']} | {summary['accuracy']:.4f} | {summary['invalid']} |"
+        )
+    (output_dir / "llm_gen_only_summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print("wrote", output_dir / "llm_gen_only_summary.json", flush=True)
+
+
+if __name__ == "__main__":
+    main()
