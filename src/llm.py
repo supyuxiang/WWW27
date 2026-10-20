@@ -17,7 +17,7 @@ from src.utils import (
     load_tokenizer
 )
 
-ASSISTANT_PREFILL = "Best answer: ["
+ASSISTANT_PREFILL = "\nBest answer: ["
 
 logger = logging.getLogger(__file__)
 
