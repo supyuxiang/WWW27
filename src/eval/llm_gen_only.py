@@ -23,13 +23,6 @@ from src.utils import (
 os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")
 from vllm import LLM, SamplingParams
 
-PROMPT = (
-    "Claim: {claim}\n"
-    "Decide whether the claim is Real or Fake. "
-    "Put your final answer in \\boxed{{Real}} or \\boxed{{Fake}}."
-)
-
-_ANSWER_RE = re.compile(r"\b(real|fake|true|false)\b", re.IGNORECASE)
 _LATEX_WRAPPER_RE = re.compile(r"\\(?:text|mathrm|textbf)\s*\{([^{}]*)\}")
 
 
@@ -60,19 +53,41 @@ def _boxed_values(text: str) -> list[str]:
     return values
 
 
-def _normalize_answer(value: str) -> str | None:
-    match = _ANSWER_RE.search(value or "")
-    if not match:
+def build_prompt(bench: Benchmark, claim: str) -> str:
+    labels = list(bench.choice_dict)
+    lines = []
+    lines.append(f"Claim: {claim}")
+    lines.append("Decide which verdict applies to the claim.")
+    for label, description in bench.choice_dict.items():
+        lines.append(f"- {label}: {description}")
+    lines.append(
+        "Put your final answer in \\boxed{VERDICT}, "
+        "where VERDICT is exactly one of: " + ", ".join(labels) + "."
+    )
+    return "\n".join(lines)
+
+
+def _match_label(value: str, labels: list[str]) -> str | None:
+    folded = " ".join(value.split())
+    exact = {label.casefold(): label for label in labels}
+    if folded.casefold() in exact:
+        return exact[folded.casefold()]
+    hits: list[tuple[int, int, str]] = []
+    for label in labels:
+        pattern = re.compile(rf"(?<!\w){re.escape(label)}(?!\w)", re.IGNORECASE)
+        for match in pattern.finditer(folded):
+            hits.append((match.start(), len(label), label))
+    if not hits:
         return None
-    word = match.group(1).lower()
-    return "real" if word in {"real", "true"} else "fake"
+    hits.sort(key=lambda item: (item[0], item[1]))
+    return hits[-1][2]
 
 
-def parse_generation(text: str) -> str | None:
-    """Read the final \\boxed{Real/Fake} answer.
+def parse_generation(text: str, labels: list[str]) -> str | None:
+    """Read the final \\boxed{...} verdict.
 
     Only a boxed final answer is accepted; free-form reasoning frequently
-    mentions both labels and must not be mistaken for the conclusion.
+    mentions several labels and must not be mistaken for the conclusion.
     """
     boxed = _boxed_values(text or "")
     if not boxed:
@@ -80,7 +95,7 @@ def parse_generation(text: str) -> str | None:
     value = boxed[-1]
     for _ in range(2):
         value = _LATEX_WRAPPER_RE.sub(r"\1", value)
-    return _normalize_answer(value)
+    return _match_label(value, labels)
 
 
 class VLLMGenerator:
@@ -142,6 +157,7 @@ def run_one(
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"llm_gen_only_{name}.jsonl"
     started = time.perf_counter()
+    labels = list(bench.choice_dict)
     gold: list[str] = []
     pred: list[str] = []
     invalid = 0
@@ -149,7 +165,7 @@ def run_one(
     with output_path.open("w", encoding="utf-8") as handle:
         for batch_start in range(0, len(examples), batch_size):
             batch = examples[batch_start : batch_start + batch_size]
-            prompts = [PROMPT.format(claim=item["claim"]) for item in batch]
+            prompts = [build_prompt(bench, item["claim"]) for item in batch]
             batch_started = time.perf_counter()
             texts = generator.generate_batch(prompts, max_new_tokens)
             
@@ -158,7 +174,7 @@ def run_one(
 
             for offset, (example, text) in enumerate(zip(batch, texts)):
                 index = batch_start + offset + 1
-                prediction = parse_generation(text)
+                prediction = parse_generation(text, labels)
                 if prediction is None:
                     prediction = 'invalid'
                     invalid +=1
@@ -248,7 +264,7 @@ def main() -> None:
     summaries = {}
     for name in args.benchmarks:
         examples, bench = load_benchmark(name, args.limit)
-        print(f"{name}: {len(examples)} binary claims", flush=True)
+        print(f"{name}: {len(examples)} claims", flush=True)
         summaries[name] = run_one(
             name,
             examples,
