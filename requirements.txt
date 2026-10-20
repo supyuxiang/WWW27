@@ -1,0 +1,9 @@
+# Runtime for the JARV loop and the fine-tuning framework.
+# The verl1 environment already provides torch/transformers.
+pyyaml>=6
+tqdm>=4
+torch>=2.1
+transformers>=4.40
+huggingface_hub>=0.23
+# Optional, only for `finetune.train --lora`:
+# peft>=0.10

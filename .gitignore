@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+outputs/
+data/claims.jsonl
+data/corpus.jsonl
+*.pt
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/

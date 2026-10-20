@@ -1,0 +1,26 @@
+﻿model_path: /root/autodl-tmp/models/Qwen3-8B
+data_path: data/sample_claims.jsonl
+corpus_path: data/sample_corpus.jsonl
+output_path: outputs/predictions.jsonl
+method: jarv
+claim_mode: stored
+domain: ""
+limit: 0
+offset: 0
+seed: 0
+tau_g: 0.5
+tau_a: 0.5
+max_aspects: 3
+queries_per_aspect: 1
+passages_per_query: 3
+search_cap: 3
+max_claim_chars: 1500
+max_passage_chars: 800
+max_evidence_chars: 3600
+query_max_new_tokens: 192
+json_retries: 2
+reverse_options: false
+resume: false
+bm25_k1: 1.5
+bm25_b: 0.75
+
