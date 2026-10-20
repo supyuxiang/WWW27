@@ -35,11 +35,12 @@ def prompt4whether_retrieval(
     user_prompt = f'Claim: {claim}.'
     if current_evidence is not None:
         user_prompt += f'\nCurrent evidence:{current_evidence}'
-    user_prompt += ("Decide whether more external evidence is needed to assess the central factual content, then select one:\n "
-                    '[1] Need more evidence.\n'
-                    '[2] Do not need more evidence.'
+    user_prompt += (
+        "\nDecide whether more external evidence is needed to assess the central factual content, then select one:\n "
     )
-    options = ['1','2']
+    for i, (k,v) in enumerate(WHETHER_RETRIEVAL.items()):
+        user_prompt += f'\n[{i+1}] {k} (description: {v}).'
+    options = [f'{i+1}' for i in range(len(WHETHER_RETRIEVAL))]
     return system_prompt, user_prompt, options
 
 
