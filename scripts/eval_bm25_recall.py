@@ -19,7 +19,7 @@ if str(ROOT) not in sys.path:
 
 from src.retrieval import BM25Retriever
 from src.retrieval_sqlite import SQLiteBM25Retriever
-from src.types import Document
+from src.config import Document
 
 BENCHMARK_ROOT = Path("/root/autodl-tmp/www27/benchmark")
 INDEX_ROOT = Path("/root/autodl-tmp/www27/index")

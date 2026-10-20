@@ -11,8 +11,8 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from src.utils.text import STOPWORDS, best_passage, tokenize
-from src.types import Passage
+from src.utils import STOPWORDS, best_passage, tokenize
+from src.config import Passage
 
 
 class SQLiteBM25Retriever:

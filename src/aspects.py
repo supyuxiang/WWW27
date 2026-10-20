@@ -11,7 +11,7 @@ class Aspect:
     definition: str
 
     def to_str(self):
-        return f'Name:{self.name}, definition:{self.definition}.'
+        return f'Name: {self.name}, definition: {self.definition}'
 
 
 ASPECTS: tuple[Aspect, ...] = (
