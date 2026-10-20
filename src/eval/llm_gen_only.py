@@ -221,12 +221,12 @@ def main() -> None:
     )
     parser.add_argument("--max-new-tokens", type=int, default=1024)
     parser.add_argument("--tensor-parallel-size", type=int, default=1)
-    parser.add_argument("--gpu-memory-utilization", type=float, default=0.90)
+    parser.add_argument("--gpu-memory-utilization", type=float, default=0.92)
     parser.add_argument("--max-model-len", type=int, default=8192)
     parser.add_argument(
         "--enable-thinking",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
         help="Enable Qwen3 thinking mode in the chat template (default: on)",
     )
     args = parser.parse_args()
