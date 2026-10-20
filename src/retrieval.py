@@ -5,8 +5,8 @@ from __future__ import annotations
 import math
 from collections import Counter, defaultdict
 
-from src.utils.text import STOPWORDS, best_passage, tokenize
-from src.types import Document, Passage
+from src.utils import STOPWORDS, best_passage, tokenize
+from src.config import Document, Passage
 
 
 class BM25Index:

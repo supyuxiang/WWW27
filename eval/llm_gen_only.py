@@ -9,10 +9,10 @@ import time
 from collections import Counter
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.prompts import SYSTEM_PROMPT
+from src.prompts import SYSTEM_PROMPT, prompt4generate_choice
 from src.utils import (
     Benchmark,
     compute_accuracy,
@@ -51,20 +51,6 @@ def _boxed_values(text: str) -> list[str]:
         else:
             break
     return values
-
-
-def build_prompt(bench: Benchmark, claim: str) -> str:
-    labels = list(bench.choice_dict)
-    lines = []
-    lines.append(f"Claim: {claim}")
-    lines.append("Decide which verdict applies to the claim.")
-    for label, description in bench.choice_dict.items():
-        lines.append(f"- {label}: {description}")
-    lines.append(
-        "Put your final answer in \\boxed{VERDICT}, "
-        "where VERDICT is exactly one of: " + ", ".join(labels) + "."
-    )
-    return "\n".join(lines)
 
 
 def _match_label(value: str, labels: list[str]) -> str | None:
@@ -165,7 +151,7 @@ def run_one(
     with output_path.open("w", encoding="utf-8") as handle:
         for batch_start in range(0, len(examples), batch_size):
             batch = examples[batch_start : batch_start + batch_size]
-            prompts = [build_prompt(bench, item["claim"]) for item in batch]
+            prompts = [prompt4generate_choice(bench, item["claim"]) for item in batch]
             batch_started = time.perf_counter()
             texts = generator.generate_batch(prompts, max_new_tokens)
             

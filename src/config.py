@@ -6,6 +6,28 @@ import yaml
 
 
 @dataclass
+class Document:
+    doc_id: str
+    title: str = ""
+    text: str = ""
+    url: str = ""
+    date: str = ""
+
+
+@dataclass
+class Passage:
+    doc_id: str
+    text: str
+    score: float = 0.0
+    title: str = ""
+    url: str = ""
+    date: str = ""
+    query: str = ""
+    sub_claim: str = ""
+    aspect: str = ""
+
+
+@dataclass
 class WWW27Config:
     model_path: str = "/root/autodl-tmp/models/Qwen3-8B"
     data_path: str = "data/sample_claims.jsonl"
@@ -21,7 +43,9 @@ class WWW27Config:
     tau_a: float = 0.5
     max_aspects: int = 3
     queries_per_aspect: int = 1
-    passages_per_query: int = 3
+    passages_per_query: int = 2
+    bm25_candidates: int = 500
+    rerank_model_path: str = "/root/autodl-tmp/models/Qwen3-Reranker-0.6B"
     search_cap: int = 3
     max_claim_chars: int = 1500
     max_passage_chars: int = 800
@@ -80,17 +104,15 @@ def _coerce_value(key: str, value: object, default: object) -> object:
     return value
 
 
-def load_config(path: str | None) -> JarvConfig:
-    config = JarvConfig()
+def load_config(path: str | None) -> WWW27Config:
+    config = WWW27Config()
     if not path:
         return config
     with open(path, "r", encoding="utf-8") as handle:
-        raw = yaml.safe_load(handle)
-    if raw is None:
-        raw = {}
-    if not isinstance(raw, dict):
-        raise SystemExit(f"Config {path} must contain a mapping of keys to values")
-    defaults = {item.name: item.default for item in fields(JarvConfig)}
+        raw = yaml.safe_load(handle) or {}
+        assert isinstance(raw, dict), type(raw)
+        
+    defaults = {item.name: item.default for item in fields(WWW27Config)}
     unknown = sorted(set(raw) - set(defaults))
     if unknown:
         raise SystemExit(f"Unknown config keys: {', '.join(unknown)}")
@@ -99,4 +121,4 @@ def load_config(path: str | None) -> JarvConfig:
     return config
 
 
-METHODS = ("jarv",)
+METHODS = ("www27",)

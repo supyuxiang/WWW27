@@ -1,5 +1,6 @@
 import json
 import math
+import re
 import numpy as np
 import torch
 import torch.nn as nn
@@ -122,6 +123,27 @@ def load_benchmark(
                 return item[key]
         return None
 
+    def _record_label(item: dict):
+        if item.get('label') is not None:
+            return item['label']
+        # SciFact stores SUPPORT / CONTRADICT on evidence rationales.
+        # An empty evidence dict is the not-enough-info class.
+        labels = []
+        evidence = item.get('evidence')
+        if isinstance(evidence, dict):
+            for rationales in evidence.values():
+                if not isinstance(rationales, list):
+                    continue
+                for rationale in rationales:
+                    if isinstance(rationale, dict) and rationale.get('label') is not None:
+                        labels.append(rationale['label'])
+        unique = list(dict.fromkeys(labels))
+        if len(unique) == 1:
+            return unique[0]
+        if not unique:
+            return 'NOT ENOUGH INFO'
+        return unique[0]
+
     for bench in BENCHMARKS:
         if benchmark_name != bench.name:
             continue
@@ -133,7 +155,7 @@ def load_benchmark(
         for item in obj:
             row = {
                 'claim': item['claim'],
-                'label': item['label'],
+                'label': _record_label(item),
             }
             record_id = _record_id(item)
             if record_id is not None:
@@ -177,6 +199,139 @@ def compute_f1(
         recall = tp / (tp + fn) if tp + fn else 0.0
         f1_sum += (2 * precision * recall / (precision + recall)) if precision + recall else 0.0
     return f1_sum / len(labels)
+
+
+
+
+TOKEN_RE = re.compile(r"[a-z0-9]+(?:'[a-z0-9]+)?", re.IGNORECASE)
+STOPWORDS = {
+    "a",
+    "an",
+    "the",
+    "of",
+    "to",
+    "and",
+    "in",
+    "on",
+    "for",
+    "is",
+    "are",
+    "was",
+    "were",
+    "be",
+    "been",
+    "it",
+    "this",
+    "that",
+    "with",
+    "as",
+    "at",
+    "by",
+    "from",
+    "or",
+}
+_BAD_MARKERS = (
+    "<|im_start|>",
+    "<|im_end|>",
+    "<|endoftext|>",
+    "<|object_ref_start|>",
+    "<|object_ref_end|>",
+)
+
+
+def sanitize(text: str | None) -> str:
+    value = text or ""
+    for marker in _BAD_MARKERS:
+        value = value.replace(marker, " ")
+    return value.replace("\x00", " ")
+
+
+def tokenize(text: str | None) -> list[str]:
+    return TOKEN_RE.findall((text or "").lower())
+
+
+def clip(text: str | None, max_chars: int) -> str:
+    value = sanitize(text).strip()
+    if max_chars <= 0 or len(value) <= max_chars:
+        return value
+    suffix = " ..."
+    if max_chars <= len(suffix):
+        return value[:max_chars]
+    return value[: max_chars - len(suffix)].rstrip() + suffix
+
+
+def _inline(value: str | None, default: str = "") -> str:
+    """Collapse arbitrary text to one safe header line."""
+    text = " ".join(sanitize(value).split())
+    return text or default
+
+
+def best_passage(text: str, query: str, max_chars: int) -> str:
+    body = sanitize(text).strip()
+    if max_chars <= 0 or len(body) <= max_chars:
+        return body
+    terms = [token for token in tokenize(query) if token not in STOPWORDS] or tokenize(query)
+    lowered = body.lower()
+    positions = []
+    for term in terms:
+        found = lowered.find(term)
+        if term and found >= 0:
+            positions.append(found)
+    if not positions:
+        return body[:max_chars].rstrip()
+    center = positions[len(positions) // 2]
+    start = max(0, center - max_chars // 3)
+    if start > 0:
+        space = body.rfind(" ", 0, start)
+        if space >= 0 and start - space < 40:
+            start = space + 1
+    return body[start : start + max_chars].rstrip()
+
+
+def near_duplicate(left: str, right: str, threshold: float = 0.9) -> bool:
+    left_terms = set(tokenize(left)[:300])
+    right_terms = set(tokenize(right)[:300])
+    if not left_terms or not right_terms:
+        return False
+    overlap = len(left_terms & right_terms)
+    return overlap / min(len(left_terms), len(right_terms)) >= threshold
+
+
+def is_leakage(claim: str, source_ids: set[str], doc_id: str, doc_text: str) -> bool:
+    if doc_id in source_ids:
+        return True
+    claim_text = (claim or "").strip().lower()
+    if len(claim_text) >= 40 and claim_text in (doc_text or "").lower():
+        return True
+    return near_duplicate(claim, doc_text)
+
+
+def format_evidence(passages, max_chars: int = 3600) -> str:
+    if not passages:
+        return "none"
+    blocks = []
+    used = 0
+    for index, passage in enumerate(passages, start=1):
+        source = _inline(passage.doc_id, "unknown")
+        date = _inline(passage.date, "unavailable")
+        url = _inline(passage.url, "unavailable")
+        aspect = _inline(passage.aspect, "n/a")
+        query = _inline(passage.query)
+        header = (
+            f"[{index}] source={source}; date={date}; url={url}; "
+            f"aspect={aspect}; query={query}"
+        )
+        body = sanitize(passage.text).strip()
+        remaining = max_chars - used
+        if remaining <= 0:
+            break
+        piece = header + "\n" + body
+        if len(piece) > remaining:
+            piece = piece[:remaining].rstrip()
+        blocks.append(piece)
+        used += len(piece) + 2
+    return "\n\n".join(blocks) if blocks else "none"
+
 
 def main():
     pass
