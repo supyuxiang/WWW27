@@ -13,8 +13,13 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from src.prompts import SYSTEM_PROMPT
-from src.utils import load_benchmark, load_tokenizer
-
+from src.utils import (
+    Benchmark,
+    compute_accuracy,
+    compute_f1,
+    load_benchmark,
+    load_tokenizer
+)
 os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")
 from vllm import LLM, SamplingParams
 
@@ -127,6 +132,7 @@ class VLLMGenerator:
 def run_one(
     name: str,
     examples: list[dict],
+    bench: Benchmark,
     model_path: str,
     output_dir: Path,
     generator: VLLMGenerator,
@@ -180,7 +186,6 @@ def run_one(
                 if index % 25 == 0 or index == len(examples):
                     print(f"{name}: {index}/{len(examples)}", flush=True)
     elapsed = time.perf_counter() - started
-    correct = sum(g == p for g, p in zip(gold, pred))
     summary = {
         "benchmark": name,
         "model": model_path,
@@ -192,7 +197,8 @@ def run_one(
         ),
         "n": len(gold),
         "invalid": invalid,
-        "accuracy": correct / len(gold) if gold else 0.0,
+        "accuracy": compute_accuracy(gold, pred),
+        "f1": compute_f1(gold, pred, bench),
         "gold_counts": dict(Counter(gold)),
         "prediction_counts": dict(Counter(pred)),
         "elapsed_s": elapsed,
@@ -241,11 +247,12 @@ def main() -> None:
     )
     summaries = {}
     for name in args.benchmarks:
-        examples, _bench = load_benchmark(name, args.limit)
+        examples, bench = load_benchmark(name, args.limit)
         print(f"{name}: {len(examples)} binary claims", flush=True)
         summaries[name] = run_one(
             name,
             examples,
+            bench,
             args.model,
             output_dir,
             generator,
@@ -258,12 +265,13 @@ def main() -> None:
     lines = [
         "# No-retrieval LLM-Gen baseline",
         "",
-        "| Benchmark | n | Accuracy | Invalid |",
-        "|---|---:|---:|---:|",
+        "| Benchmark | n | Accuracy | F1 | Invalid |",
+        "|---|---:|---:|---:|---:|",
     ]
     for name, summary in summaries.items():
         lines.append(
-            f"| {name} | {summary['n']} | {summary['accuracy']:.4f} | {summary['invalid']} |"
+            f"| {name} | {summary['n']} | {summary['accuracy']:.4f} | "
+            f"{summary['f1']:.4f} | {summary['invalid']} |"
         )
     (output_dir / "llm_gen_only_summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("wrote", output_dir / "llm_gen_only_summary.json", flush=True)

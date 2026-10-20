@@ -147,6 +147,37 @@ def load_benchmark(
 
 
 
+# metrics
+
+def compute_accuracy(gold_ls: list[str], pred_ls: list[str]) -> float:
+    assert len(gold_ls) == len(pred_ls)
+    correct = sum(truth == guess for truth, guess in zip(gold_ls, pred_ls))
+    return correct / max(len(gold_ls),1)
+
+def compute_f1(
+    gold_ls: list[str],
+    pred_ls: list[str],
+    benchmark: Benchmark,
+) -> float:
+    assert len(gold_ls) == len(pred_ls)
+    labels = list(benchmark.choice_dict)
+    if not labels:
+        return 0.0
+    f1_sum = 0.0
+    for label in labels:
+        tp = fp = fn = 0
+        for truth, guess in zip(gold_ls, pred_ls):
+            if guess == label and truth == label:
+                tp += 1
+            elif guess == label and truth != label:
+                fp += 1
+            elif truth == label and guess != label:
+                fn += 1
+        precision = tp / (tp + fp) if tp + fp else 0.0
+        recall = tp / (tp + fn) if tp + fn else 0.0
+        f1_sum += (2 * precision * recall / (precision + recall)) if precision + recall else 0.0
+    return f1_sum / len(labels)
+
 def main():
     pass
 

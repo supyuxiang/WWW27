@@ -1,9 +1,7 @@
-"""Retrieval-augmented LLM-as-Jev baseline.
+"""Retrieval-augmented JEV baseline.
 
-For each claim we issue exactly one claim-level retrieval query (no aspect
-decomposition), take the top-3 passages, concatenate them after the claim, and
-ask the frozen model to choose between Real and Fake with the same candidate
-suffix scoring used by JARV.
+For each claim we issue one claim-level retrieval query, take the top passages,
+and score the benchmark's own verdict choices.
 """
 
 from __future__ import annotations
@@ -15,21 +13,33 @@ import time
 from collections import Counter
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
 
-from baselines.jev_only import _load_jsonl, load_benchmark
 from src.llm import LocalLLM
-from src.prompts import SYSTEM_PROMPT, judge_prompt
+from src.prompts import prompt4what_choice
 from src.retrieval import BM25Retriever
 from src.retrieval_sqlite import SQLiteBM25Retriever
 from src.types import Document
-from src.utils.metrics import accuracy, macro_f1
-
+from src.utils import (
+    Benchmark,
+    compute_accuracy,
+    compute_f1,
+    load_benchmark
+)
 BENCHMARK_ROOT = Path("/root/autodl-tmp/www27/benchmark")
 INDEX_ROOT = Path("/root/autodl-tmp/www27/index")
 DEFAULT_MODEL = "/root/autodl-tmp/models/Qwen2.5-3B-Instruct"
+
+
+def _load_jsonl(path: Path) -> list[dict]:
+    rows: list[dict] = []
+    with path.open(encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if line:
+                rows.append(json.loads(line))
+    return rows
 
 
 def load_scifact_corpus() -> list[Document]:
@@ -82,11 +92,13 @@ def format_passages(passages) -> str:
 def run_benchmark(
     name: str,
     examples: list[dict],
+    bench: Benchmark,
     model_path: str,
     output_dir: Path,
     top_k: int,
 ) -> dict:
     llm = LocalLLM(model_path)
+    labels = list(bench.choice_dict)
     retrievers = RetrieverBundle()
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"jev_retrieval_{name}.jsonl"
@@ -105,19 +117,19 @@ def run_benchmark(
             error = None
             passages = []
             try:
-                passages = retrievers.search(name, example["id"], example["claim"], top_k)
+                passages = retrievers.search(name, str(example.get("id") or ""), example["claim"], top_k)
                 search_calls += 1
                 retrieval_counts[len(passages)] += 1
                 evidence = format_passages(passages)
-                user, options = judge_prompt(example["claim"], "none", evidence)
-                choice = llm.score_options(SYSTEM_PROMPT, user, options)
-                prediction = choice.key
-                probs = choice.probs
-                if prediction not in {"real", "fake"}:
-                    error = f"invalid prediction {prediction!r}"
-                else:
-                    gold.append(example["gold"])
-                    pred.append(prediction)
+                system_prompt, user_prompt, options = prompt4what_choice(
+                    bench, example["claim"], evidence
+                )
+                scored = llm.score_options(system_prompt, user_prompt, options)
+                best_idx = int(scored["best_idx"])
+                prediction = labels[best_idx]
+                probs = {label: float(scored["probs"][i]) for i, label in enumerate(labels)}
+                gold.append(example["label"])
+                pred.append(prediction)
             except Exception as exc:  # keep a partially usable run
                 error = f"{type(exc).__name__}: {exc}"
             latency = time.perf_counter() - item_started
@@ -126,10 +138,9 @@ def run_benchmark(
                 n_errors += 1
             row = {
                 "benchmark": name,
-                "id": example["id"],
+                "id": example.get("id"),
                 "claim": example["claim"],
-                "gold": example["gold"],
-                "raw_label": example["raw_label"],
+                "gold": example.get("label"),
                 "prediction": prediction,
                 "judge_probs": probs,
                 "retrieved": [
@@ -155,8 +166,8 @@ def run_benchmark(
         "n": len(gold),
         "n_errors": n_errors,
         "n_input": len(examples),
-        "accuracy": accuracy(gold, pred),
-        "macro_f1": macro_f1(gold, pred),
+        "accuracy": compute_accuracy(gold, pred),
+        "f1": compute_f1(gold, pred, bench),
         "gold_counts": dict(Counter(gold)),
         "prediction_counts": dict(Counter(pred)),
         "retrieval_counts": dict(retrieval_counts),
@@ -177,7 +188,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Retrieval-augmented LLM-as-Jev baseline")
     parser.add_argument("--benchmarks", nargs="+", default=["averitec", "fever", "scifact"])
     parser.add_argument("--model", default=DEFAULT_MODEL)
-    parser.add_argument("--limit", type=int, default=0, help="0 means all binary claims")
+    parser.add_argument("--limit", type=int, default=0, help="<=0 means the full split")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--top-k", type=int, default=3)
     parser.add_argument("--output-dir", default="/root/autodl-tmp/www27/results/jev_retrieval_qwen25_3b")
@@ -185,10 +196,10 @@ def main() -> None:
     output_dir = Path(args.output_dir)
     summaries = {}
     for name in args.benchmarks:
-        examples = load_benchmark(name, args.limit, args.seed)
-        print(f"{name}: {len(examples)} binary claims", flush=True)
+        examples, bench = load_benchmark(name, args.limit)
+        print(f"{name}: {len(examples)} claims", flush=True)
         summaries[name] = run_benchmark(
-            name, examples, args.model, output_dir, args.top_k
+            name, examples, bench, args.model, output_dir, args.top_k
         )
     (output_dir / "jev_retrieval_summary.json").write_text(
         json.dumps(summaries, indent=2), encoding="utf-8"
@@ -196,13 +207,13 @@ def main() -> None:
     lines = [
         "# Retrieval-augmented LLM-as-Jev baseline",
         "",
-        "| Benchmark | n | Accuracy | Macro-F1 | Errors |",
+        "| Benchmark | n | Accuracy | F1 | Errors |",
         "|---|---:|---:|---:|---:|",
     ]
     for name, summary in summaries.items():
         lines.append(
             f"| {name} | {summary['n']} | {summary['accuracy']:.4f} | "
-            f"{summary['macro_f1']:.4f} | {summary['n_errors']} |"
+            f"{summary['f1']:.4f} | {summary['n_errors']} |"
         )
     (output_dir / "jev_retrieval_summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print((output_dir / "jev_retrieval_summary.md").read_text(encoding="utf-8"))
