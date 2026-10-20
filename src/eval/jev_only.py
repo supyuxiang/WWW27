@@ -20,8 +20,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.prompts import SYSTEM_PROMPT, judge_prompt  # noqa: E402
-from src.utils.metrics import accuracy, macro_f1  # noqa: E402
+from src.prompts import SYSTEM_PROMPT, judge_prompt
+from src.utils.metrics import accuracy, macro_f1
 
 BENCHMARK_ROOT = Path("/root/autodl-tmp/www27/benchmark")
 DEFAULT_MODEL = "/root/autodl-tmp/models/Qwen3-8B"

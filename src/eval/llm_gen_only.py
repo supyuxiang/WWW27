@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from src.prompts import SYSTEM_PROMPT
-from src.utils import load_benchmark
+from src.utils import load_benchmark, load_tokenizer
 
 os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")
 from vllm import LLM, SamplingParams
@@ -79,8 +79,6 @@ def parse_generation(text: str) -> str | None:
 
 
 class VLLMGenerator:
-    """Batched offline generation with vLLM."""
-
     def __init__(
         self,
         model_path: str,
@@ -97,13 +95,9 @@ class VLLMGenerator:
             max_model_len=max_model_len,
             dtype="bfloat16",
         )
-        self.tokenizer = self.llm.get_tokenizer()
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
-        if self.tokenizer.pad_token_id is None:
-            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+        self.tokenizer = load_tokenizer(model_path)
 
-    def _render(self, user: str) -> str:
+    def _format_one(self, user: str) -> str:
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user},
@@ -116,18 +110,18 @@ class VLLMGenerator:
             )
 
     def generate_batch(self, prompts: list[str], max_new_tokens: int) -> list[str]:
-        rendered = [self._render(prompt) for prompt in prompts]
+        formatted = [
+            self._format_one(prompt) for prompt in prompts
+        ]
         sp = SamplingParams(
             temperature=0.0,
             max_tokens=max_new_tokens,
             skip_special_tokens=True,
         )
-        outputs = self.llm.generate(rendered, sp)
-        texts: list[str] = []
-        for output in outputs:
-            assert outputs
-            texts.append(output.outputs[0].text.strip()) # for temperature=0
-        return texts
+        outputs = self.llm.generate(formatted, sp)
+        return [
+            output.outputs[0].text.strip() for output in outputs
+        ]
 
 
 def run_one(
@@ -162,16 +156,16 @@ def run_one(
                 if prediction is None:
                     prediction = 'invalid'
                     invalid +=1
-                gold.append(example["gold"])
+                gold.append(example["label"])
                 pred.append(prediction)
                 latencies.append(per_item_latency)
                 handle.write(
                     json.dumps(
                         {
                             "benchmark": name,
-                            "id": example["id"],
+                            "id": example.get("id"),
                             "claim": example["claim"],
-                            "gold": example["gold"],
+                            "gold": example["label"],
                             "prediction": prediction,
                             "generation": text or None,
                             "latency_s": per_item_latency,
@@ -247,7 +241,7 @@ def main() -> None:
     )
     summaries = {}
     for name in args.benchmarks:
-        examples = load_benchmark(name, args.limit, args.seed)
+        examples, _bench = load_benchmark(name, args.limit)
         print(f"{name}: {len(examples)} binary claims", flush=True)
         summaries[name] = run_one(
             name,
