@@ -1,8 +1,3 @@
-"""No-retrieval JEV baseline on AVeriTeC, FEVER, and SciFact.
-
-The judge scores the benchmark's own verdict choices and never retrieves evidence.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -48,16 +43,14 @@ def run_benchmark(
             prediction = None
             probs: dict[str, float] = {}
             error = None
-            try:
-                system_prompt, user_prompt, options = prompt4what_choice(bench, example["claim"])
-                scored = llm.score_options(system_prompt, user_prompt, options)
-                best_idx = int(scored["best_idx"])
-                prediction = labels[best_idx]
-                probs = {label: float(scored["probs"][i]) for i, label in enumerate(labels)}
-                gold.append(example["label"])
-                pred.append(prediction)
-            except Exception as exc:  # keep a partially usable run
-                error = f"{type(exc).__name__}: {exc}"
+            system_prompt, user_prompt, options = prompt4what_choice(bench, example["claim"])
+            scored = llm.score_options(system_prompt, user_prompt, options)
+            best_idx = int(scored["best_idx"])
+            prediction = labels[best_idx]
+            probs = {label: float(scored["probs"][i]) for i, label in enumerate(labels)}
+            gold.append(example["label"])
+            pred.append(prediction)
+            
             latency = time.perf_counter() - item_started
             latencies.append(latency)
             if error:
@@ -105,7 +98,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="No-retrieval JEV baseline")
     parser.add_argument("--benchmarks", nargs="+", default=["averitec", "fever", "scifact"])
     parser.add_argument("--model", default=DEFAULT_MODEL)
-    parser.add_argument("--limit", type=int, default=200, help="<=0 means the full split")
+    parser.add_argument("--limit", type=int, default=500, help="<=0 means the full split")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--output-dir", default="/root/www27/output")
     args = parser.parse_args()
