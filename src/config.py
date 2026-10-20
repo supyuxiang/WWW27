@@ -6,7 +6,7 @@ import yaml
 
 
 @dataclass
-class JevConfig:
+class WWW27Config:
     model_path: str = "/root/autodl-tmp/models/Qwen3-8B"
     data_path: str = "data/sample_claims.jsonl"
     corpus_path: str = "data/sample_corpus.jsonl"
