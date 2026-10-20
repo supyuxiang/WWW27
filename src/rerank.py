@@ -44,10 +44,11 @@ class Qwen3Reranker:
         )
         if self.tokenizer.pad_token_id is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
-        self.prefix_tokens = self.tokenizer.encode(_PREFIX, add_special_tokens=False)
-        self.suffix_tokens = self.tokenizer.encode(_SUFFIX, add_special_tokens=False)
-        self.true_id = self.tokenizer.convert_tokens_to_ids("yes")
-        self.false_id = self.tokenizer.convert_tokens_to_ids("no")
+
+        self.prefix_tokens: list[int] = self.tokenizer.encode(_PREFIX, add_special_tokens=False)
+        self.suffix_tokens: list[int] = self.tokenizer.encode(_SUFFIX, add_special_tokens=False)
+        self.true_id: int = self.tokenizer.convert_tokens_to_ids("yes")
+        self.false_id: int = self.tokenizer.convert_tokens_to_ids("no")
         unk = getattr(self.tokenizer, "unk_token_id", None)
         if self.true_id is None or self.false_id is None or self.true_id == unk or self.false_id == unk:
             raise ValueError(f"{model_path} tokenizer has no single yes/no tokens")
