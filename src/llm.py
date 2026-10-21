@@ -164,5 +164,31 @@ def main():
     
     breakpoint()
 
+
+#########TODO
+
+from abc import ABC, abstractmethod
+
+class Jev_Base(ABC):
+    @abstractmethod
+    def encode(self):
+        pass
+
+    @abstractmethod
+    def score_options(self):
+        pass
+
+class Laya(Jev_Base):
+    def encode(self):
+        print("Laya encoding")
+
+    def score_options(self):
+        print("Laya scoring")
+
+# class Kev(Jev_Base):   # 如果不实现，实例化会报错
+#     pass
+
+# kev = Kev()  # TypeError: Can't instantiate abstract class Kev with abstract methods encode, score_options
+
 if __name__ == '__main__':
     main()
