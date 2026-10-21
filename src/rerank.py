@@ -61,6 +61,37 @@ class Qwen3Reranker:
         self.model.to(self.device)
         self.model.eval()
 
+    def _score_batch(
+            self,
+            query: str,
+            passages: list[Passage]
+        ) -> list[float]:
+            room = self.max_length - len(self.prefix_tokens) - len(self.suffix_tokens)
+            encoded = self.tokenizer(
+                [_pair(query, passage) for passage in passages],
+                padding=False,
+                truncation=True,
+                max_length=max(room,8),
+                add_special_tokens=False,
+                return_attention_mask=False
+            )
+            for idx, token_ids in enumerate(encoded['input_ids']):
+                encoded['input_ids'][idx] = self.prefix_tokens + list(token_ids) + self.suffix_tokens
+            batch = self.tokenizer.pad(
+                encoded,
+                padding=True,
+                return_tensors='pt'
+            )
+            batch = {k:v.to(self.device) for k,v in batch.items()}
+            with torch.inference_mode():
+                logits = self.model(**batch).logits[:, -1, :]
+            true = logits[:, self.true_id]
+            false = logits[:, self.false_id]
+            probs = torch.softmax(
+                torch.stack([false, true], dim=1).float(), dim=1
+            )[:,1]
+            return [float(item) for item in probs]
+
     
     def score(
         self,
@@ -74,6 +105,7 @@ class Qwen3Reranker:
             chunk = passages[start : start + self.batch_size]
             scores.extend(self._score_batch(query, chunk))
         return scores
+
 
     def rerank(
         self,
@@ -90,37 +122,6 @@ class Qwen3Reranker:
             reverse=True
         )
         return [(passages[idx], scores[idx]) for idx in order[: top_k]]
-
-    def _score_batch(
-        self,
-        query: str,
-        passages: list[Passage]
-    ) -> list[float]:
-        room = self.max_length - len(self.prefix_tokens) - len(self.suffix_tokens)
-        encoded = self.tokenizer(
-            [_pair(query, passage) for passage in passages],
-            padding=False,
-            truncation=True,
-            max_length=max(room,8),
-            add_special_tokens=False,
-            return_attention_mask=False
-        )
-        for idx, token_ids in enumerate(encoded['input_ids']):
-            encoded['input_ids'][idx] = self.prefix_tokens + list(token_ids) + self.suffix_tokens
-        batch = self.tokenizer.pad(
-            encoded,
-            padding=True,
-            return_tensors='pt'
-        )
-        batch = {k:v.to(self.device) for k,v in batch.items()}
-        with torch.inference_mode():
-            logits = self.model(**batch).logits[:, -1, :]
-        true = logits[:, self.true_id]
-        false = logits[:, self.false_id]
-        probs = torch.softmax(
-            torch.stack([false, true], dim=1).float(), dim=1
-        )[:,1]
-        return [float(item) for item in probs]
 
 
 def main():
