@@ -37,7 +37,6 @@ class Qwen3Reranker:
         self.max_length = max_length
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         if self.device.type == 'cpu': print('using cpu!!!')
-        dtype = torch.bfloat16 if self.device.type == "cuda" else torch.float32
         self.tokenizer = AutoTokenizer.from_pretrained(
             model_path,
             padding_side="left",
@@ -50,12 +49,12 @@ class Qwen3Reranker:
         self.suffix_tokens: list[int] = self.tokenizer.encode(_SUFFIX, add_special_tokens=False)
         self.true_id: int = self.tokenizer.convert_tokens_to_ids("yes")
         self.false_id: int = self.tokenizer.convert_tokens_to_ids("no")
-        unk = getattr(self.tokenizer, "unk_token_id", None)
+        unk: int | None = getattr(self.tokenizer, "unk_token_id", None)
         if self.true_id is None or self.false_id is None or self.true_id == unk or self.false_id == unk:
             raise ValueError(f"{model_path} tokenizer has no single yes/no tokens")
         self.model = AutoModelForCausalLM.from_pretrained(
             model_path,
-            dtype=dtype,
+            dtype=torch.bfloat16,
             local_files_only=True,
             trust_remote_code=True,
         )
