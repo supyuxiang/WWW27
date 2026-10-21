@@ -9,7 +9,12 @@ candidate documents of the current claim (used by AVeriTeC's knowledge store).
 from __future__ import annotations
 
 import sqlite3
+
+import sys
 from pathlib import Path
+
+ROOT=Path(__file__).parents[1].resolve()
+sys.path.insert(0,str(ROOT))
 
 from src.utils import STOPWORDS, best_passage, tokenize
 from src.config import Passage

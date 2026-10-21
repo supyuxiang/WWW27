@@ -5,12 +5,22 @@ from __future__ import annotations
 import math
 from collections import Counter, defaultdict
 
+import sys
+from pathlib import Path
+
+ROOT=Path(__file__).parents[1].resolve()
+sys.path.insert(0,str(ROOT))
+
 from src.utils import STOPWORDS, best_passage, tokenize
 from src.config import Document, Passage
 
-
 class BM25Index:
-    def __init__(self, documents: list[Document], k1: float = 1.5, b: float = 0.75):
+    def __init__(
+        self,
+        documents: list[Document],
+        k1: float=1.5,
+        b: float=0.75
+    ):
         self.documents = documents
         self.k1 = k1
         self.b = b
@@ -33,7 +43,12 @@ class BM25Index:
             for term, freq in self.df.items()
         }
 
-    def search(self, query: str, k: int, exclude_ids: set[str] | None = None) -> list[Passage]:
+    def search(
+        self,
+        query: str,
+        k: int,
+        exclude_ids: set[str] | None = None
+    ) -> list[Passage]:
         if k <= 0 or not self.documents:
             return []
         blocked = exclude_ids or set()
@@ -74,7 +89,12 @@ class BM25Index:
 
 
 class BM25Retriever:
-    def __init__(self, documents: list[Document], k1: float = 1.5, b: float = 0.75):
+    def __init__(
+        self,
+        documents: list[Document],
+        k1: float=1.5,
+        b: float=0.75,
+    ):
         self.documents = documents
         self.index = BM25Index(documents, k1=k1, b=b)
 
