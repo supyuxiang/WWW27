@@ -181,6 +181,10 @@ class Jev_Base(ABC):
 
 
 class Laya(Jev_Base):
+    def __init__(
+        self,
+    ):
+        pass
     def encode(self):
         pass
     def score_options(self):
