@@ -5,6 +5,11 @@ from pathlib import Path
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).parents[1].resolve()
+sys.path.insert(0,str(ROOT))
 
 from src.config import Passage
 
@@ -84,13 +89,14 @@ class Qwen3Reranker:
             )
             batch = {k:v.to(self.device) for k,v in batch.items()}
             with torch.inference_mode():
-                logits = self.model(**batch).logits[:, -1, :]
-            true = logits[:, self.true_id]
-            false = logits[:, self.false_id]
+                # logits: bsz, seq_len, vocab_size
+                logits = self.model(**batch).logits[:, -1, :] # bsz, vocab_size
+            true = logits[:, self.true_id] # bsz,
+            false = logits[:, self.false_id] # bsz,
             probs = torch.softmax(
                 torch.stack([false, true], dim=1).float(), dim=1
-            )[:,1]
-            return [float(item) for item in probs]
+            )[:,1] # bsz,
+            return [float(item) for item in probs] # len=bsz
 
     
     def score(
@@ -115,7 +121,7 @@ class Qwen3Reranker:
     ) -> list[tuple[Passage, float]]:
         if top_k <= 0 or not passages:
             return []
-        scores = self.score(query, passages)
+        scores: list[float] = self.score(query, passages)
         order = sorted(
             range(len(passages)),
             key=lambda idx: scores[idx],
@@ -125,9 +131,49 @@ class Qwen3Reranker:
 
 
 def main():
-    reranker = Qwen3Reranker(model_path='/root/autodl-tmp/models/Qwen3-Reranker-0.6B')
+    model_path = "/root/autodl-tmp/models/Qwen3-Reranker-0.6B"
+    reranker = Qwen3Reranker(model_path=model_path, batch_size=8, max_length=512)
+
+    query = "Find evidence that the fruit is crimson."
+    passages = [
+        Passage(
+            doc_id="p1",
+            title="Apple",
+            text="An apple is a scarlet fruit that grows on a tree.",
+        ),
+        Passage(
+            doc_id="p2",
+            title="Banana",
+            text="A banana is a long yellow fruit.",
+        ),
+        Passage(
+            doc_id="p3",
+            title="Cherry",
+            text="A cherry is a small crimson fruit with a stone.",
+        ),
+        Passage(
+            doc_id="p4",
+            title="Blueberry",
+            text="A blueberry is a small blue fruit.",
+        ),
+    ]
+
+    print("query:", query)
+    scores = reranker.score(query, passages)
+    print("scores:", scores)
+
+    assert len(scores) == len(passages), (len(scores), len(passages))
+    assert all(0.0 <= score <= 1.0 for score in scores), scores
+
+    ranked = reranker.rerank(query, passages, top_k=2)
+    print("top-2:")
+    for passage, score in ranked:
+        print(f"  {passage.doc_id} {passage.title}: {score:.4f}")
+
+    assert len(ranked) == 2
+    assert ranked[0][1] >= ranked[1][1]
+
     breakpoint()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
-    
