@@ -1,82 +1,119 @@
-"""Local Okapi BM25 retrieval. No remote search calls."""
+"""Qdrant/bm25 sparse retrieval.
+
+This module keeps the public ``BM25Retriever.search`` contract used by JARV,
+but delegates BM25 tokenization/weighting to fastembed's Qdrant/bm25 model.
+
+Differences from the previous pure-Python BM25 implementation:
+  - documents are encoded once at startup into sparse BM25 vectors;
+  - an in-memory term -> (doc_index, weight) postings index is built;
+  - queries are encoded with the same model and scored by sparse dot product;
+  - the model's BM25 weighting replaces the old k1/b formula, so scores are
+    not numerically comparable with the previous implementation.
+
+The model is expected at ``Qdrant/bm25`` in the fastembed cache. Set
+FASTEMBED_BM25_CACHE to override the cache directory.
+"""
 
 from __future__ import annotations
 
-import math
-from collections import Counter, defaultdict
+import os
+from collections import defaultdict
 
-import sys
-from pathlib import Path
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
 
-ROOT=Path(__file__).parents[1].resolve()
-sys.path.insert(0,str(ROOT))
+from fastembed import SparseTextEmbedding
 
-from src.utils import STOPWORDS, best_passage, tokenize
 from src.config import Document, Passage
+from src.utils import best_passage
 
-class BM25Index:
+MODEL_NAME = os.environ.get("FASTEMBED_BM25_MODEL", "Qdrant/bm25")
+MODEL_CACHE = os.environ.get(
+    "FASTEMBED_BM25_CACHE",
+    "/root/autodl-tmp/models/fastembed",
+)
+ENCODE_BATCH_SIZE = int(os.environ.get("FASTEMBED_BM25_BATCH_SIZE", "256"))
+
+
+class BM25Retriever:
+    """Sparse BM25 retriever backed by Qdrant/bm25 + fastembed."""
+
     def __init__(
         self,
         documents: list[Document],
-        k1: float=1.5,
-        b: float=0.75
+        k1: float = 1.5,
+        b: float = 0.75,
     ):
+        # k1/b are kept in the signature for compatibility, but the
+        # pretrained Qdrant/bm25 model supplies its own BM25 weighting.
         self.documents = documents
         self.k1 = k1
         self.b = b
-        self.tf: list[Counter] = []
-        self.lengths: list[int] = []
-        self.df: Counter = Counter()
-        self.postings: dict[str, list[int]] = defaultdict(list)
-        for index, document in enumerate(documents):
-            tokens = tokenize(f"{document.title}\n{document.text}")
-            counts = Counter(tokens)
-            self.tf.append(counts)
-            self.lengths.append(len(tokens) or 1)
-            for term in counts:
-                self.df[term] += 1
-                self.postings[term].append(index)
-        self.n_docs = len(documents)
-        self.avgdl = (sum(self.lengths) / self.n_docs) if self.n_docs else 1.0
-        self.idf = {
-            term: math.log(1.0 + (self.n_docs - freq + 0.5) / (freq + 0.5))
-            for term, freq in self.df.items()
-        }
+        self.postings: dict[int, list[tuple[int, float]]] = defaultdict(list)
+        self._model = SparseTextEmbedding(
+            model_name=MODEL_NAME,
+            cache_dir=MODEL_CACHE,
+            local_files_only=True,
+        )
+        self._build_index()
+
+    def _build_index(self) -> None:
+        texts = [
+            f"{document.title}\n{document.text}" if document.title else document.text
+            for document in self.documents
+        ]
+        total = len(texts)
+        if not total:
+            return
+        for start in range(0, total, ENCODE_BATCH_SIZE):
+            batch = texts[start : start + ENCODE_BATCH_SIZE]
+            vectors = list(self._model.embed(batch))
+            for offset, vector in enumerate(vectors):
+                doc_index = start + offset
+                for term, weight in zip(vector.indices, vector.values):
+                    self.postings[int(term)].append((doc_index, float(weight)))
+            done = min(start + len(batch), total)
+            print(f"[fastembed-bm25] indexed {done}/{total}", flush=True)
+
+    def _query_vector(self, query: str) -> dict[int, float]:
+        vector = list(self._model.query_embed(query))[0]
+        result: dict[int, float] = {}
+        for term, weight in zip(vector.indices, vector.values):
+            key = int(term)
+            result[key] = result.get(key, 0.0) + float(weight)
+        return result
 
     def search(
         self,
         query: str,
         k: int,
-        exclude_ids: set[str] | None = None
+        exclude_ids: set[str] | None = None,
+        max_passage_chars: int = 800,
     ) -> list[Passage]:
         if k <= 0 or not self.documents:
             return []
-        blocked = exclude_ids or set()
-        terms = [token for token in tokenize(query) if token not in STOPWORDS]
-        if not terms:
-            terms = tokenize(query)
-        if not terms:
+        query_vector = self._query_vector(query)
+        if not query_vector:
             return []
+
         scores: dict[int, float] = defaultdict(float)
-        for term, query_tf in Counter(terms).items():
-            idf = self.idf.get(term)
-            if idf is None:
-                continue
-            for doc_index in self.postings.get(term, ()):
-                tf = self.tf[doc_index][term]
-                length = self.lengths[doc_index]
-                denom = tf + self.k1 * (1.0 - self.b + self.b * length / self.avgdl)
-                scores[doc_index] += idf * (tf * (self.k1 + 1.0) / denom) * query_tf
+        for term, query_weight in query_vector.items():
+            for doc_index, document_weight in self.postings.get(term, ()):
+                scores[doc_index] += query_weight * document_weight
+
         ranked = sorted(scores.items(), key=lambda item: (-item[1], item[0]))
+        blocked = exclude_ids or set()
         passages: list[Passage] = []
         for doc_index, score in ranked:
             document = self.documents[doc_index]
-            if document.doc_id in blocked:
+            if str(document.doc_id) in blocked:
+                continue
+            text = best_passage(document.text, query, max_passage_chars)
+            if not text:
                 continue
             passages.append(
                 Passage(
                     doc_id=document.doc_id,
-                    text=document.text,
+                    text=text,
                     score=float(score),
                     title=document.title,
                     url=document.url,
@@ -88,27 +125,5 @@ class BM25Index:
         return passages
 
 
-class BM25Retriever:
-    def __init__(
-        self,
-        documents: list[Document],
-        k1: float=1.5,
-        b: float=0.75,
-    ):
-        self.documents = documents
-        self.index = BM25Index(documents, k1=k1, b=b)
-
-    def search(
-        self,
-        query: str,
-        k: int,
-        exclude_ids: set[str] | None = None,
-        max_passage_chars: int = 800,
-    ) -> list[Passage]:
-        hits = self.index.search(query, k=k, exclude_ids=exclude_ids)
-        trimmed = []
-        for hit in hits:
-            hit.text = best_passage(hit.text, query, max_passage_chars)
-            if hit.text:
-                trimmed.append(hit)
-        return trimmed
+# Compatibility alias for code that imported the old index class directly.
+BM25Index = BM25Retriever
