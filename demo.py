@@ -1,10 +1,3 @@
-"""Demo: Qdrant/bm25 sparse retrieval with fastembed.
-
-The model was downloaded to /root/autodl-tmp/models/fastembed.
-Run:
-    /root/autodl-tmp/miniconda3/envs/www27/bin/python /root/yxfeng/www27/demo.py
-"""
-
 from __future__ import annotations
 
 import os
