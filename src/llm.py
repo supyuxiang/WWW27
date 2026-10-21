@@ -11,13 +11,12 @@ from pathlib import Path
 ROOT = Path(__file__).parents[1].resolve()
 sys.path.insert(0,str(ROOT))
 
-# from src.prompts import ASSISTANT_PREFILL
+from src.prompts import ASSISTANT_PREFILL
 
 from src.utils import (
     load_tokenizer
 )
 
-ASSISTANT_PREFILL = "\nBest answer: ["
 
 logger = logging.getLogger(__file__)
 
