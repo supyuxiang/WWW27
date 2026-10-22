@@ -90,14 +90,15 @@ def build_few_shot(
     assert not missing, missing
 
     # 建立 label -> valid fs_examples的mapping
-    mapping: dict[str, list[tuple[int, dict]]] = dict()
+    mapping = dict()
     for label in labels:
         candidates: list[tuple[int,dict]] = [
             (position, row) for position, row in enumerate(pool)
             if row.get('label') == label
         ]
         assert candidates, f'label:{label},candidates:{candidates}'
-        mapping[label] = iter(candidates)
+        mapping[label] = candidates
+
 
     selected: list[dict] = []
     selected_positions: set[int] = set()
@@ -107,15 +108,15 @@ def build_few_shot(
     valid_label = [
         label for label in labels if mapping[label][0][1]['evidence']
     ][0]
-    for _, row in next(mapping[valid_label]):
+    for _, row in mapping[valid_label][num_per_label:]:
         evidence_for_nei.append(row['evidence'])
         if len(evidence_for_nei) == num_per_label:
             break
 
     # 正式抽所有label的fs数据
-    for i in num_per_label:
+    for i in range(num_per_label):
         for label in labels:
-            position, row = next(mapping[label])
+            position, row = mapping[label][i]
             selected_positions.add(position)
             evidence = row['evidence']
             if not evidence:
