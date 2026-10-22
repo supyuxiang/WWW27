@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from src.worker import LLM_as_Jev
-from src.prompts import prompt4what_choice
+from src.prompts import prompt4jev_judge
 from src.utils import (
     Benchmark,
     compute_accuracy,
