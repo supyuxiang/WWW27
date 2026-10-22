@@ -8,11 +8,17 @@ import sys
 import time
 from collections import Counter
 from pathlib import Path
+import torch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.prompts import SYSTEM_PROMPT, prompt4generate_choice
+from src.prompts import (
+    SYSTEM_PROMPT,
+    prompt4llm_judge,
+    build_few_shot,
+)
+
 from src.utils import (
     Benchmark,
     compute_accuracy,
@@ -88,9 +94,9 @@ class VLLMGenerator:
     def __init__(
         self,
         model_path: str,
-        tensor_parallel_size: int,
-        gpu_memory_utilization: float,
-        max_model_len: int,
+        tensor_parallel_size: int = torch.cuda.device_count(),
+        gpu_memory_utilization: float = 0.92,
+        max_model_len: int = 8192,
         enable_thinking: bool = False,
     ):
         self.enable_thinking = enable_thinking
@@ -101,33 +107,72 @@ class VLLMGenerator:
             max_model_len=max_model_len,
             dtype="bfloat16",
         )
-        self.tokenizer = load_tokenizer(model_path)
+        self.llm_name = str(model_path).split('/')[-1]
+        self.tokenizer = load_tokenizer(model_path, is_training=False)
 
-    def _format_one(self, user: str) -> str:
+        self.sp = SamplingParams(
+            temperature=0.0,
+            max_tokens=1024,
+            skip_special_tokens=True,
+        )
+
+    def _format_one(self, user_prompt: str) -> str:
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user},
+            {"role": "user", "content": user_prompt},
         ]
         return self.tokenizer.apply_chat_template(
             messages,
             tokenize=False,
             add_generation_prompt=True,
             enable_thinking=self.enable_thinking,
-            )
-
-    def generate_batch(self, prompts: list[str], max_new_tokens: int) -> list[str]:
+        )
+    
+    def generate_batch(
+        self,
+        prompts: list[str],
+        sp: SamplingParams | None = None
+    ) -> list[str]:
+        # NOTE : greedy decoding
         formatted = [
             self._format_one(prompt) for prompt in prompts
         ]
-        sp = SamplingParams(
-            temperature=0.0,
-            max_tokens=max_new_tokens,
-            skip_special_tokens=True,
-        )
+        if sp is None:
+            sp = self.sp
         outputs = self.llm.generate(formatted, sp)
         return [
             output.outputs[0].text.strip() for output in outputs
         ]
+
+
+
+def run_one(
+    bench_cls: Benchmark,
+    bench: list[dict],
+    vllm_generator: VLLMGenerator,
+    fs_limit:int=3,
+    output_dir: str | Path = '/root/autodl-tmp/www27/llm_gen_only'
+) -> dict:
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / f'{bench.name}_{vllm_generator.llm_name}.jsonl'
+    labels = list(bench_cls.choice_dict.keys())
+    claim_ls = []
+    evidence_ls = []
+    gold_ls: list[str] = []
+    pred_ls: list[str] = []
+    invalid = 0
+
+    few_shot: str = build_few_shot(bench_cls=bench_cls,limit=fs_limit)
+    formatted = [
+        prompt4llm_judge(
+            benchmark_cls=bench_cls,
+            claim=claim,
+            few_shot=few_shot,
+            evidence=evidence
+        )
+        for claim, evidence in zip(claim_ls, evidence_ls)
+    ]
 
 
 def run_one(

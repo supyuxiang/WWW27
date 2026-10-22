@@ -8,8 +8,11 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0,str(ROOT))
 
 from src.aspects import Aspect, ASPECTS
-from src.utils import BENCHMARKS, Benchmark
-
+from src.utils import (
+    BENCHMARKS,
+    Benchmark,
+    load_benchmark
+)
 
 
 ###############    prompts    #####################
@@ -32,24 +35,75 @@ WHICH_CHOICE = {
 
 #######################    RQ1     ###########################
 
+# format single few-shot example
+def format_fs_one(
+    claim: str,
+    evidence: str,
+    label: str,
+):  
+    def set_to_str(evidence:set) -> str:
+        pass
+
+    lines = [
+        f'Claim: {claim}',
+        'Decide which verdict applies to the claim.',
+    ]
+    lines.append(f'Current evidence:\n{set_to_str(evidence)}')
+    lines.append(f'Final answer: \\boxed{label}')
+    return '\n'.join(lines)
+
+
+def build_few_shot(
+    bench_cls: Benchmark,
+    limit: int=3,
+) -> str:
+    # load training set / reference data
+    full_data,_ = load_benchmark(
+        benchmark_name=bench_cls.name,
+        limit=-1
+    )
+    # 筛选出来evidence非空的example
+    selected_data = []
+    for data in full_data:
+        if data['evidence'] == {}:
+            continue
+        selected_data.append(
+            dict(
+                claim=data['claim'],
+                evidence=data['evidence'],
+                label=data['label']
+            )
+        )
+        if len(selected_data) == limit:
+            break
+
+    lines = [
+        format_fs_one(
+            **item
+        ) for item in selected_data
+    ]
+
+    return '\n'.join(lines)
+
+
 # for llm-gen
 def prompt4llm_judge(
-    benchmark: Benchmark,
+    benchmark_cls: Benchmark,
     claim: str,
     few_shot: str | None = None,
     evidence: str | None = None,
 ) -> tuple[str, str, list[str]]:
     system_prompt = SYSTEM_PROMPT
-    options = [f'{i+1}' for i in range(len(benchmark.choice_dict))]
+    options = [f'{i+1}' for i in range(len(benchmark_cls.choice_dict))]
 
-    labels = list(benchmark.choice_dict)
+    labels = list(benchmark_cls.choice_dict)
     lines=[f'Claim: {claim}']
     lines = [
         f'Claim: {claim}',
         'Decide which verdict applies to the claim.',
     ]
 
-    for i, (k,v) in enumerate(benchmark.choice_dict.items()):
+    for i, (k,v) in enumerate(benchmark_cls.choice_dict.items()):
         lines.append(
             f'[{i+1}] {k} (description: {v}).'
         )
@@ -75,19 +129,19 @@ def prompt4llm_judge(
 
 # for llm_as_jeev
 def prompt4jev_judge(
-    benchmark: Benchmark,
+    benchmark_cls: Benchmark,
     claim: str,
     few_shot: str | None = None,
     evidence: str | None = None
 ) -> tuple[str, str, list[str]]:
     system_prompt = SYSTEM_PROMPT
-    options = [f'{i+1}' for i in range(len(benchmark.choice_dict))]
+    options = [f'{i+1}' for i in range(len(benchmark_cls.choice_dict))]
 
     lines = [
         f'Claim: {claim}',
         'Decide which verdict applies to the claim.',
     ]
-    for i, (k,v) in enumerate(benchmark.choice_dict.items()):
+    for i, (k,v) in enumerate(benchmark_cls.choice_dict.items()):
         lines.append(
             f'[{i+1}] {k} (description: {v}).'
         )
