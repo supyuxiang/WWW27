@@ -60,6 +60,56 @@ def prompt4generate_choice(
     return '\n'.join(lines)
 
 
+def prompt4jev_choice(
+        benchmark: Benchmark,
+        claim: str,
+        few_shot: str | None = None,
+        evidence: str | None = None,
+) -> str:
+    labels = list(benchmark.choice_dict)
+    lines = [
+        f'Claim: {claim}',
+        'Decide which verdict applies to the claim.',
+    ]
+
+    for label, description in benchmark.choice_dict.items():
+        lines.append(f'- {label}: {description}')
+
+    if few_shot is not None and isinstance(few_shot, str):
+        lines.append(
+            f'For example:\n{few_shot}'
+        )
+    if evidence is not None and isinstance(evidence, str):
+        lines.append(
+            f'Evidence:\n{evidence}'
+        )
+
+    lines.append('\n')
+    lines.append(
+        'Put your final answer in \\boxed{VERDICT}, '
+        'where VERDICT is exactly one of: ' + ', '.join(labels) + '.'
+    )
+    return '\n'.join(lines)
+
+
+
+# def prompt4what_choice(
+#     benchmark: Benchmark,
+#     claim: str,
+#     current_evidence: str | None = None
+# ) -> tuple[str, str, list[str]]:
+#     system_prompt = SYSTEM_PROMPT
+#     options = [f'{i+1}' for i in range(len(benchmark.choice_dict))]
+#     user_prompt_ls=[f'Claim: {claim}']
+#     if current_evidence is not None:
+#         user_prompt_ls.append(f'Current evidence: {current_evidence}')
+#     user_prompt_ls.append('Which choice is correct:')
+#     for i, (k,v) in enumerate(benchmark.choice_dict.items()):
+#         user_prompt_ls.append(
+#             f'[{i+1}] {k} (description: {v}).'
+#         )
+#     user_prompt = '\n'.join(user_prompt_ls)
+#     return system_prompt, user_prompt, options
 
 
 ############################################################
