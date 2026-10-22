@@ -1,10 +1,3 @@
-"""Offline JARV loop for AVeriTeC, FEVER, and SciFact.
-
-BM25 retrieves the top 500 passages for the raw claim. Each selected aspect
-reranks that pool with Qwen3-Reranker-0.6B and keeps top 2. Those passages
-are appended to the evidence shown in later prompts. No text is generated.
-"""
-
 from __future__ import annotations
 
 import argparse

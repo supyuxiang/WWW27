@@ -1,9 +1,3 @@
-"""Retrieval-augmented JEV baseline.
-
-For each claim we issue one claim-level retrieval query, take the top passages,
-and score the benchmark's own verdict choices.
-"""
-
 from __future__ import annotations
 
 import argparse

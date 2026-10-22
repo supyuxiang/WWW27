@@ -35,10 +35,7 @@ from src.utils import (
 os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")
 from vllm import LLM, SamplingParams
 
-# Math-Verify owns boxed-answer extraction: nested braces, \text{}, \mathrm{},
-# malformed LaTeX, and choosing the final boxed answer are handled upstream.
-# The label matching below is deliberately rule-based because the labels are
-# benchmark-specific strings, not mathematical expressions.
+
 from math_verify import parse as math_verify_parse
 from math_verify.parser import LatexExtractionConfig
 
@@ -131,8 +128,6 @@ def _match_label(value: str, labels: list[str]) -> str | None:
 
 
 def parse_generation(text: str, labels: list[str]) -> str | None:
-    # Math-Verify returns parsed objects plus the raw extracted strings.  The
-    # raw string is the best candidate for a textual label such as SUPPORTS.
     candidates = _extract_answer_candidates(text)
     for value in reversed(candidates):
         matched = _match_label(value, labels)
