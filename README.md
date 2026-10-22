@@ -13,8 +13,6 @@
 
     AVeriTeC (4-way, 含多跳 + 时间敏感，较难,随机抽300条测试)
 
-    Climate-FEVER (3-way, 随机抽500条)
-
     HealthVer (3-way, 随机抽1k条)
 
 ## (4) Evaluaton

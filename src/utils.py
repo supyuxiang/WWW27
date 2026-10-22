@@ -90,23 +90,7 @@ BENCHMARKS = [
             'Labels are SUPPORT, CONTRADICT, and NOT ENOUGH INFO.'
         ),
     ),
-
-    Benchmark(
-        name='climate_fever',
-        path=PREPROCESSED_ROOT / 'claims/climate_fever/test.jsonl',
-        choice_dict={
-            'SUPPORTS': 'The evidence supports the climate claim.',
-            'REFUTES': 'The evidence refutes the climate claim.',
-            'NOT ENOUGH INFO': (
-                'The evidence does not contain enough information to support or refute the claim.'
-            ),
-        },
-        doc=(
-            'Climate-FEVER checks climate-related claims against evidence. '
-            'This is the 500-claim test sample.'
-        ),
-    ),
-
+    
     Benchmark(
         name='healthver',
         path=PREPROCESSED_ROOT / 'claims/healthver/test.jsonl',
