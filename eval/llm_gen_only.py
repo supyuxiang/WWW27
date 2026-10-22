@@ -207,7 +207,7 @@ def main() -> None:
     parser.add_argument("--tensor-parallel-size", type=int, default=1)
     parser.add_argument("--gpu-memory-utilization", type=float, default=0.92)
     parser.add_argument("--max-model-len", type=int, default=8192)
-    parser.add_argument("--fs-limit", type=int, default=2)
+    parser.add_argument("--fs-limit", type=int, default=0)
     parser.add_argument(
         "--enable-thinking",
         action=argparse.BooleanOptionalAction,
