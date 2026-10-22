@@ -1,6 +1,6 @@
 
 # RQ1：验证LLM-as-Jev具有training-free的fact-checking能力———设计离线检索实验去验证jev+retrieval once的能力
-## (1) Models: Qwen2.5-0.5/1.5/3/7/14/32B-Instruct; Qwen3-0.6/1.7/4/8/14B; Qwen3.5-4B; Qwen3.8-27B; Llama3.2-3B-Instruct; gemma-2-2/9/27b-it; gemma-3-4/12/27b-it; Mistral-7B-Instruct-v0.3
+## (1) Models: Qwen2.5-0.5/1.5/3/7/14/32B-Instruct; Qwen3-0.6/1.7/4/8/14B; Qwen3.5-4B; Qwen3.8-27B; Llama3.2-3B-Instruct; Mistral-7B-Instruct-v0.3
 ## (2) Settings (compared with generation，含闭源模型): 
     zero-shot
     few-shot
@@ -27,12 +27,18 @@
     Jev 错 / Gen 对.
     NEI边界.
 
-## (5) 时间：1-2 day
+## (5) 时间：1 day ( + code review)
 
 
 
 # RQ2：我们框架，Doffy（Decoding-free fact-verifying）的设计，main result
+## 时间 2 day
+## Models
 
 # RQ3: ablation
+## Models
+##  5h
 
 # RQ4: efficiency
+## Models
+## 3h
