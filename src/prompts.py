@@ -26,6 +26,44 @@ WHICH_CHOICE = {
     bench.name: bench.choice_dict for bench in BENCHMARKS
 }
 
+#######################    RQ1     ###########################
+
+# for llm-gen
+def prompt4generate_choice(
+        benchmark: Benchmark,
+        claim: str,
+        few_shot: str | None = None,
+        evidence: str | None = None,
+) -> str:
+    labels = list(benchmark.choice_dict)
+    lines = [
+        f'Claim: {claim}',
+        'Decide which verdict applies to the claim.',
+    ]
+    for label, description in benchmark.choice_dict.items():
+        lines.append(f'- {label}: {description}')
+
+    if few_shot is not None and isinstance(few_shot, str):
+        lines.append(
+            f'For example:\n{few_shot}'
+        )
+    if evidence is not None and isinstance(evidence, str):
+        lines.append(
+            f'Evidence:\n{evidence}'
+        )
+
+    lines.append('\n')
+    lines.append(
+        'Put your final answer in \\boxed{VERDICT}, '
+        'where VERDICT is exactly one of: ' + ', '.join(labels) + '.'
+    )
+    return '\n'.join(lines)
+
+
+
+
+############################################################
+
 
 
 def prompt4whether_retrieval(
@@ -82,21 +120,6 @@ def prompt4aspect_check( # 第二次开始筛选aspect用这个prompt
     )
     options = ['1', '2']
     return system_prompt, user_prompt, options
-
-
-def prompt4generate_choice(benchmark: Benchmark, claim: str) -> str:
-    labels = list(benchmark.choice_dict)
-    lines = [
-        f'Claim: {claim}',
-        'Decide which verdict applies to the claim.',
-    ]
-    for label, description in benchmark.choice_dict.items():
-        lines.append(f'- {label}: {description}')
-    lines.append(
-        'Put your final answer in \\boxed{VERDICT}, '
-        'where VERDICT is exactly one of: ' + ', '.join(labels) + '.'
-    )
-    return '\n'.join(lines)
 
 
 def prompt4what_choice(
