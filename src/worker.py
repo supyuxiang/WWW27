@@ -7,6 +7,7 @@ import torch
 import torch.nn.functional as F
 from transformers import AutoModelForCausalLM
 
+import os
 import sys
 from pathlib import Path
 
@@ -18,10 +19,59 @@ from src.prompts import ASSISTANT_PREFILL
 from src.utils import (
     load_tokenizer
 )
-from src.prompts import format_prefix4jev
+from src.prompts import format_prefix4jev, SYSTEM_PROMPT
+
+from vllm import LLM, SamplingParams
+
+os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")
 
 
 logger = logging.getLogger(__file__)
+
+
+class VLLMGenerator:
+    def __init__(
+        self,
+        model_path: str,
+        tensor_parallel_size: int = torch.cuda.device_count(),
+        gpu_memory_utilization: float = 0.92,
+        max_model_len: int = 8192,
+        max_new_tokens: int = 1024,
+        enable_thinking: bool = False,
+    ):
+        self.enable_thinking = enable_thinking
+        self.llm = LLM(
+            model=model_path,
+            tensor_parallel_size=tensor_parallel_size,
+            gpu_memory_utilization=gpu_memory_utilization,
+            max_model_len=max_model_len,
+            dtype="bfloat16",
+        )
+        self.llm_name = str(model_path).split("/")[-1]
+        self.tokenizer = load_tokenizer(model_path, is_training=False)
+        self.sp = SamplingParams(
+            temperature=0.0,
+            max_tokens=max_new_tokens,
+            skip_special_tokens=True,
+        )
+
+    def _format_one(self, user_prompt: str) -> str:
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ]
+        return self.tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=self.enable_thinking,
+        )
+
+    def generate_batch(self, prompts: list[str]) -> list[str]:
+        formatted = [self._format_one(prompt) for prompt in prompts]
+        outputs = self.llm.generate(formatted, self.sp)
+        return [output.outputs[0].text.strip() for output in outputs]
+
 
 
 ################    base     #################

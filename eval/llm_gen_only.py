@@ -13,14 +13,7 @@ import torch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-# Use the vendored Math-Verify checkout first.  It is kept under third_party/
-# so extraction rules can be extended without touching site-packages.
-MATH_VERIFY_ROOT = ROOT / "third_party" / "Math-Verify"
-if (MATH_VERIFY_ROOT / "src").is_dir():
-    sys.path.insert(0, str(MATH_VERIFY_ROOT / "src"))
-
 from src.prompts import (
-    SYSTEM_PROMPT,
     prompt4llm_judge,
     build_few_shot,
 )
@@ -29,12 +22,13 @@ from src.utils import (
     compute_accuracy,
     compute_f1,
     load_benchmark,
-    load_tokenizer,
 )
+from src.worker import VLLMGenerator
 
-os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")
-from vllm import LLM, SamplingParams
 
+MATH_VERIFY_ROOT = ROOT / "third_party" / "Math-Verify"
+if (MATH_VERIFY_ROOT / "src").is_dir():
+    sys.path.insert(0, str(MATH_VERIFY_ROOT / "src"))
 
 from math_verify import parse as math_verify_parse
 from math_verify.parser import LatexExtractionConfig
@@ -134,50 +128,6 @@ def parse_generation(text: str, labels: list[str]) -> str | None:
         if matched is not None:
             return matched
     return None
-
-
-class VLLMGenerator:
-    def __init__(
-        self,
-        model_path: str,
-        tensor_parallel_size: int = torch.cuda.device_count(),
-        gpu_memory_utilization: float = 0.92,
-        max_model_len: int = 8192,
-        max_new_tokens: int = 1024,
-        enable_thinking: bool = False,
-    ):
-        self.enable_thinking = enable_thinking
-        self.llm = LLM(
-            model=model_path,
-            tensor_parallel_size=tensor_parallel_size,
-            gpu_memory_utilization=gpu_memory_utilization,
-            max_model_len=max_model_len,
-            dtype="bfloat16",
-        )
-        self.llm_name = str(model_path).split("/")[-1]
-        self.tokenizer = load_tokenizer(model_path, is_training=False)
-        self.sp = SamplingParams(
-            temperature=0.0,
-            max_tokens=max_new_tokens,
-            skip_special_tokens=True,
-        )
-
-    def _format_one(self, user_prompt: str) -> str:
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ]
-        return self.tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-            enable_thinking=self.enable_thinking,
-        )
-
-    def generate_batch(self, prompts: list[str]) -> list[str]:
-        formatted = [self._format_one(prompt) for prompt in prompts]
-        outputs = self.llm.generate(formatted, self.sp)
-        return [output.outputs[0].text.strip() for output in outputs]
 
 
 def run_one(
