@@ -13,7 +13,7 @@ sys.path.insert(0, str(ROOT))
 
 from src.aspects import ASPECTS, ASPECT_BY_NAME
 from src.config import Document, Passage, WWW27Config
-from src.llm import LocalLLM
+from src.worker import LLM_as_Jev
 from src.prompts import (
     construct_text4rerankng,
     prompt4aspect_check,
@@ -130,7 +130,7 @@ class OfflineRetriever:
 
 
 def run_example(
-    llm: LocalLLM,
+    llm: LLM_as_Jev,
     retriever: OfflineRetriever,
     reranker: Qwen3Reranker,
     bench: Benchmark,
@@ -261,7 +261,7 @@ def run_benchmark(
     name: str,
     examples: list[dict],
     bench: Benchmark,
-    llm: LocalLLM,
+    llm: LLM_as_Jev,
     retriever: OfflineRetriever,
     reranker: Qwen3Reranker,
     config: WWW27Config,
@@ -382,7 +382,7 @@ def main() -> None:
             f"Missing reranker {config.rerank_model_path}. "
             "Expected the Qwen3-Reranker-0.6B checkpoint."
         )
-    llm = LocalLLM(config.model_path)
+    llm = LLM_as_Jev(config.model_path)
     reranker = Qwen3Reranker(config.rerank_model_path)
     retriever = OfflineRetriever(bench_root, index_root, config.max_passage_chars)
     summaries = {}
