@@ -53,33 +53,21 @@ def format_fs_one(
 
 def build_few_shot(
     bench_cls: Benchmark,
-    limit: int = 0, # 0 means ``len(labels) + 1``
+    limit: int = 0, # 0 means ``len(labels) `
     split: str = 'train',
 ) -> str:
-    """Build few-shot demonstrations with complete label coverage.
-
-    Args:
-        bench_cls: Benchmark definition.
-        limit: Number of demonstrations. 0 means ``len(labels) + 1``.  It must
-            be strictly greater than the number of label categories so that
-            every label can appear at least once and one extra example can be
-            added.
-        split: Preferred split; benchmarks without a training split fall back
-            to their dev split.
-
-    Every label in ``bench_cls.choice_dict`` is represented at least once.
-    Examples with non-empty gold evidence are preferred within a label, but
-    empty-evidence examples are kept for labels such as NEI.
-    """
+    
     labels = list(bench_cls.choice_dict)
-    required = len(labels) + 1
+    required = len(labels)
     if limit <= 0:
         limit = required
-    elif limit <= len(labels):
+    elif limit < len(labels):
         raise ValueError(
             f'fs_limit={limit} must be greater than the number of labels '
             f'({len(labels)}) to cover every label'
         )
+
+    num_per_label = limit // required
 
     def _load(preferred_split: str) -> list[dict]:
         rows, _ = load_benchmark(
@@ -98,49 +86,33 @@ def build_few_shot(
     )]
     assert not missing, missing
 
-    selected: list[dict] = []
-    selected_positions: set[int] = set()
+    # 建立 label -> valid fs_examples的mapping
+    mapping: dict[str, list] = dict()
     for label in labels:
         candidates = [
-            (position, row)
-            for position, row in enumerate(pool)
+            (position, row) for position, row in enumerate(pool)
             if row.get('label') == label
         ]
-        if not candidates:
-            raise ValueError(
-                f'{bench_cls.name}: no example available for label {label!r}'
-            )
-        position, row = next(
-            (
-                candidate for candidate in candidates
-                if (candidate[1].get('evidence') or '').strip()
-            ),
-            candidates[0],
-        )
-        selected_positions.add(position)
-        selected.append({
-            'claim': row['claim'],
-            'evidence': row.get('evidence') or '',
-            'label': row['label'],
-        })
+        assert candidates, f'label:{label},candidates:{candidates}'
+        # 保留有evidence的
+        valid = [
+            candidate for candidate in candidates 
+            if candidate[1].get('evidence','').strip()
+        ]
+        mapping[label] = valid
 
-    for position, row in enumerate(pool):
-        if len(selected) >= limit:
-            break
-        if position in selected_positions:
-            continue
-        selected_positions.add(position)
-        selected.append({
-            'claim': row['claim'],
-            'evidence': row.get('evidence') or '',
-            'label': row['label'],
-        })
-
-    if len(selected) < limit:
-        raise ValueError(
-            f'{bench_cls.name}: only {len(selected)} examples available, '
-            f'requested {limit}'
-        )
+    selected: list[dict] = []
+    selected_positions: set[int] = set()
+    for _ in num_per_label:
+        for label in labels:
+            position, row = next(mapping[label])
+            selected_positions.add(position)
+            selected.append({
+                'claim': row['claim'],
+                'evidence': row['evidence'],
+                'label': row['label']
+            })
+    assert len(selected) >= limit, f'selected:{selected}, limit:{limit}'
 
     return '\n'.join(format_fs_one(**item) for item in selected)
 
