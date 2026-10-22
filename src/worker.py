@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+from abc import ABC, abstractmethod
+from typing import Any
 import torch
 import torch.nn.functional as F
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM
 
 import sys
 from pathlib import Path
@@ -16,46 +18,48 @@ from src.prompts import ASSISTANT_PREFILL
 from src.utils import (
     load_tokenizer
 )
+from src.prompts import format_prefix4jev
 
 
 logger = logging.getLogger(__file__)
 
 
+################    base     #################
 
-def format_prefix(
-    tokenizer: AutoTokenizer,
-    system_prompt:str,
-    user_prompt:str,
-    prefill: str | None = None,
-    enable_thinking: bool = False
-) -> str:
-    msg = [
-        {'role':'system','content':system_prompt},
-        {'role':'user', 'content':user_prompt},
-    ]
-    kwargs = dict(
-        tokenize=False,
-        add_generation_prompt=True,
-    )
-    if enable_thinking:
-        kwargs['enable_thinking'] = True
-    formatted = tokenizer.apply_chat_template(
-        msg,
-        **kwargs,
-    )
-    if prefill:
-        formatted += prefill
-    return formatted
+class Base(ABC):
+    
+    @abstractmethod
+    def encode(self, text:str) -> Any:
+        pass
+
+    @abstractmethod
+    def score_options(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        options: list[str]
+    ) -> Any:
+        pass
 
 
-class LocalLLM:
-    def __init__(self, model_path: str):
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#############################################
+
+class LLM_as_Jev(Base):
+
+    _cls = 'llm_as_jev'
+    
+    def __init__(
+        self,
+        model_path: str,
+        device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
+        dtype=torch.bfloat16
+    ):
+        super().__init__()
+        self.device = device
         if self.device.type == 'cpu': print('using cpu!!!')
-        self.dtype = torch.bfloat16 if self.device.type == "cuda" else torch.float32
+        self.dtype = dtype
 
         self.tokenizer = load_tokenizer(model_path)
-        self.model_path = model_path 
         self.model = AutoModelForCausalLM.from_pretrained(
             model_path,
             dtype=self.dtype,
@@ -64,7 +68,7 @@ class LocalLLM:
         self.model.to(self.device)
         self.model.eval()
 
-    def encode(self, text: str) -> list[int]:
+    def encode(self, text: str) -> torch.Tensor:
         encoded = self.tokenizer(
             text,
             add_special_tokens=False,
@@ -78,7 +82,7 @@ class LocalLLM:
         user_prompt:str,
         options: list[str],
     ) -> tuple[list[list[int]], list[tuple[int,int]]]:
-        prefix = format_prefix(
+        prefix = format_prefix4jev(
             self.tokenizer,
             system_prompt,
             user_prompt,
@@ -119,7 +123,7 @@ class LocalLLM:
             output = self.model(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
-                use_cahe=False
+                use_cache=False
             )
             logits = output.logits  # (num_seq, seq_len, vocab_size)
             scores:list[torch.Tensor] = []
@@ -150,8 +154,18 @@ class LocalLLM:
         )
         return out
 
-def main():
-    model = LocalLLM(model_path = '/root/autodl-tmp/models/Qwen2.5-7B-Instruct')
+    def count_params(self, trainable=False):
+        if trainable:
+            return sum(
+                [p.numel() for p in self.model.parameters() if p.requires_grad]
+            )
+        return sum(
+                [p.numel() for p in self.model.parameters()]
+            )
+
+
+def main_test():
+    model = LLM_as_Jev(model_path = '/root/autodl-tmp/models/Qwen2.5-7B-Instruct')
     system_prompt = '你是一个新闻的判断者，善于判断新闻的正确性'
     user_prompt = '新闻：美国总统特朗普出生于2024年12月11日。 \n这个新闻是对的吗？给出你的选择: [1]True,[2]False'
     options=['1','2']
@@ -164,25 +178,16 @@ def main():
     breakpoint()
 
 
-#########
 
-from abc import ABC, abstractmethod
+#########TODO?
 
-class Jev_Base(ABC):
-    
-    @abstractmethod
-    def encode(self):
-        pass
+class Laya(Base):
+    _cls = 'laya'
 
-    @abstractmethod
-    def score_options(self):
-        pass
-
-
-class Laya(Jev_Base):
     def __init__(
         self,
     ):
+        super().__init__()
         pass
     def encode(self):
         pass
@@ -190,7 +195,14 @@ class Laya(Jev_Base):
         pass
 
 
-class Kev(Jev_Base):
+class Kev(Base):
+    _cls = 'kev'
+
+    def __init__(
+        self,
+    ):
+        super().__init__()
+        pass
     def encode(self):
         pass
     def score_options(self):
@@ -198,4 +210,4 @@ class Kev(Jev_Base):
 
 
 if __name__ == '__main__':
-    main()
+    main_test()
