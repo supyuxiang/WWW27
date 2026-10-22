@@ -100,27 +100,25 @@ def scifact_claims(corpus: dict[str, dict], path: Path) -> list[dict]:
 
 
 def fever_evidence(claim: dict, pages: dict[str, dict]) -> str:
+    if str(claim.get("label") or "") == "NOT ENOUGH INFO":
+        return ""
     chunks = []
-    for evidence in claim.get("evidence") or []:
-        for group in evidence or []:
-            if not isinstance(group, list):
+    for group in claim.get("evidence") or []:
+        if not isinstance(group, list):
+            continue
+        for item in group:
+            if not isinstance(item, list) or not item:
                 continue
-            for item in group:
-                if not isinstance(item, list) or not item:
-                    continue
-                title = str(item[2]) if len(item) > 2 and item[2] else ""
-                page = pages.get(title) if title else None
-                if page is None and item[0] is not None:
-                    page = pages.get(str(item[0]))
-                if page:
-                    chunks.append(f"{page['title']}\n{page['text']}")
-                elif title:
-                    # The local wiki-pages dump is title-indexed and does not
-                    # always contain every FEVER page id.  Keep the gold page
-                    # title as a fallback so the example is still usable.
-                    chunks.append(title)
-                elif item[0] is not None:
-                    chunks.append(str(item[0]))
+            title = str(item[2]) if len(item) > 2 and item[2] else ""
+            page = pages.get(title) if title else None
+            if page is None and item[0] is not None:
+                page = pages.get(str(item[0]))
+            if page:
+                chunks.append(f"{page['title']}\n{page['text']}")
+            elif title:
+                chunks.append(title)
+            elif item[0] is not None:
+                chunks.append(str(item[0]))
     return "\n\n".join(dict.fromkeys(chunks))
 
 
@@ -211,14 +209,13 @@ def build_claims() -> dict:
         rows = list(load_jsonl(path))
         needed = set()
         for row in rows:
-            for evidence in row.get("evidence") or []:
-                for group in evidence or []:
-                    for item in group if isinstance(group, list) else []:
-                        if isinstance(item, list) and item:
-                            if item[0] is not None:
-                                needed.add(str(item[0]))
-                            if len(item) > 2 and item[2]:
-                                needed.add(str(item[2]))
+            for group in row.get("evidence") or []:
+                for item in group if isinstance(group, list) else []:
+                    if isinstance(item, list) and item:
+                        if item[0] is not None:
+                            needed.add(str(item[0]))
+                        if len(item) > 2 and item[2]:
+                            needed.add(str(item[2]))
         pages = dict(fever_pages(needed))
         out = []
         for row in rows:
