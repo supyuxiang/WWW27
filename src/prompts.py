@@ -40,7 +40,7 @@ def format_fs_one(
     claim: str,
     evidence: str,
     label: str,
-):
+) -> str:
     evidence_text = (evidence or "").strip()
     lines = [
         f'Claim: {claim}',
@@ -128,7 +128,19 @@ def build_few_shot(
             })
     assert len(selected) >= num_per_label * len(labels), f'selected:{selected}, limit:{num_per_label}, num_label:{len(labels)}'
 
-    return '\n'.join(format_fs_one(**item) for item in selected)
+    lines = [
+        (f'---Example {i}---\n{format_fs_one(**item)}')
+        for i, item in enumerate(selected)
+    ]
+    return '\n'.join(lines)
+
+def test_build_few_shot():
+    all_p = []
+    for bench_cls in BENCHMARKS:
+        fs_prompt = build_few_shot(bench_cls=bench_cls,limit=0,split='train')
+        all_p.append(fs_prompt)
+        breakpoint()
+    print(all_p)
 
 
 # for llm-gen
@@ -288,7 +300,7 @@ def construct_text4rerankng(claim: str, aspect: Aspect) -> str:
 
 
 def main():
-    pass
+    test_build_few_shot()
 
 
 
