@@ -53,7 +53,7 @@ def format_fs_one(
 
 def build_few_shot(
     bench_cls: Benchmark,
-    limit: int = 0,
+    limit: int = 0, # 0 means ``len(labels) + 1``
     split: str = 'train',
 ) -> str:
     """Build few-shot demonstrations with complete label coverage.
@@ -82,18 +82,11 @@ def build_few_shot(
         )
 
     def _load(preferred_split: str) -> list[dict]:
-        try:
-            rows, _ = load_benchmark(
-                benchmark_name=bench_cls.name,
-                limit=-1,
-                split=preferred_split,
-            )
-        except FileNotFoundError:
-            rows, _ = load_benchmark(
-                benchmark_name=bench_cls.name,
-                limit=-1,
-                split='dev',
-            )
+        rows, _ = load_benchmark(
+            benchmark_name=bench_cls.name,
+            limit=-1,
+            split=preferred_split,
+        )
         return [
             row for row in rows
             if row.get('label') in labels
@@ -103,13 +96,7 @@ def build_few_shot(
     missing = [label for label in labels if not any(
         row.get('label') == label for row in pool
     )]
-    if missing:
-        # A rare missing class in train: supplement it from dev.
-        fallback = _load('dev')
-        pool.extend(
-            row for row in fallback
-            if row.get('label') in missing
-        )
+    assert not missing, missing
 
     selected: list[dict] = []
     selected_positions: set[int] = set()
