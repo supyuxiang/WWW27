@@ -53,41 +53,109 @@ def format_fs_one(
 
 def build_few_shot(
     bench_cls: Benchmark,
-    limit: int = 3,
+    limit: int = 0,
     split: str = 'train',
 ) -> str:
-    """Build few-shot demonstrations from a normalized claim split.
+    """Build few-shot demonstrations with complete label coverage.
 
-    Only examples with non-empty gold evidence are used.  Benchmarks without
-    a training split fall back to their dev split.
+    Args:
+        bench_cls: Benchmark definition.
+        limit: Number of demonstrations. 0 means ``len(labels) + 1``.  It must
+            be strictly greater than the number of label categories so that
+            every label can appear at least once and one extra example can be
+            added.
+        split: Preferred split; benchmarks without a training split fall back
+            to their dev split.
+
+    Every label in ``bench_cls.choice_dict`` is represented at least once.
+    Examples with non-empty gold evidence are preferred within a label, but
+    empty-evidence examples are kept for labels such as NEI.
     """
-    try:
-        full_data, _ = load_benchmark(
-            benchmark_name=bench_cls.name,
-            limit=-1,
-            split=split,
-        )
-    except FileNotFoundError:
-        full_data, _ = load_benchmark(
-            benchmark_name=bench_cls.name,
-            limit=-1,
-            split='dev',
+    labels = list(bench_cls.choice_dict)
+    required = len(labels) + 1
+    if limit <= 0:
+        limit = required
+    elif limit <= len(labels):
+        raise ValueError(
+            f'fs_limit={limit} must be greater than the number of labels '
+            f'({len(labels)}) to cover every label'
         )
 
-    selected_data = []
-    for data in full_data:
-        evidence = (data.get('evidence') or '').strip()
-        if not evidence:
-            continue
-        selected_data.append({
-            'claim': data['claim'],
-            'evidence': evidence,
-            'label': data['label'],
+    def _load(preferred_split: str) -> list[dict]:
+        try:
+            rows, _ = load_benchmark(
+                benchmark_name=bench_cls.name,
+                limit=-1,
+                split=preferred_split,
+            )
+        except FileNotFoundError:
+            rows, _ = load_benchmark(
+                benchmark_name=bench_cls.name,
+                limit=-1,
+                split='dev',
+            )
+        return [
+            row for row in rows
+            if row.get('label') in labels
+        ]
+
+    pool = _load(split)
+    missing = [label for label in labels if not any(
+        row.get('label') == label for row in pool
+    )]
+    if missing:
+        # A rare missing class in train: supplement it from dev.
+        fallback = _load('dev')
+        pool.extend(
+            row for row in fallback
+            if row.get('label') in missing
+        )
+
+    selected: list[dict] = []
+    selected_positions: set[int] = set()
+    for label in labels:
+        candidates = [
+            (position, row)
+            for position, row in enumerate(pool)
+            if row.get('label') == label
+        ]
+        if not candidates:
+            raise ValueError(
+                f'{bench_cls.name}: no example available for label {label!r}'
+            )
+        position, row = next(
+            (
+                candidate for candidate in candidates
+                if (candidate[1].get('evidence') or '').strip()
+            ),
+            candidates[0],
+        )
+        selected_positions.add(position)
+        selected.append({
+            'claim': row['claim'],
+            'evidence': row.get('evidence') or '',
+            'label': row['label'],
         })
-        if len(selected_data) >= limit:
-            break
 
-    return '\n'.join(format_fs_one(**item) for item in selected_data)
+    for position, row in enumerate(pool):
+        if len(selected) >= limit:
+            break
+        if position in selected_positions:
+            continue
+        selected_positions.add(position)
+        selected.append({
+            'claim': row['claim'],
+            'evidence': row.get('evidence') or '',
+            'label': row['label'],
+        })
+
+    if len(selected) < limit:
+        raise ValueError(
+            f'{bench_cls.name}: only {len(selected)} examples available, '
+            f'requested {limit}'
+        )
+
+    return '\n'.join(format_fs_one(**item) for item in selected)
 
 
 # for llm-gen
