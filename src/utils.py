@@ -19,15 +19,21 @@ sys.path.insert(0,str(ROOT))
 @dataclass
 class Benchmark:
     name: str
-    path:str | Path
+    path: str | Path
     choice_dict: dict
     doc: str | None = None
+    train_path: str | Path | None = None
+
+
+PREPROCESSED_ROOT = Path('/root/autodl-tmp/benchmark_dsh/preprocessed')
+CORPUS_ROOT = PREPROCESSED_ROOT / 'corpus'
 
 
 BENCHMARKS = [
     Benchmark(
         name='averitec',
-        path='/root/yxfeng/www27/data/averitec/dev.json',
+        path=PREPROCESSED_ROOT / 'claims/averitec/dev.jsonl',
+        train_path=PREPROCESSED_ROOT / 'claims/averitec/train.jsonl',
         choice_dict={
             'Supported': (
                 'The evidence is sufficient to conclude that the central factual content of the claim is true.'
@@ -47,52 +53,74 @@ BENCHMARKS = [
         doc=(
             'AVeriTeC is a real-world fact-checking benchmark. Claims come from fact-checking '
             'articles and are verified against open-web evidence. Each claim receives one of four '
-            'verdicts: Supported, Refuted, Not Enough Evidence, or Conflicting Evidence/Cherrypicking. '
-            'This file is the development split.'
+            'verdicts: Supported, Refuted, Not Enough Evidence, or Conflicting Evidence/Cherrypicking.'
         ),
     ),
 
     Benchmark(
         name='fever',
-        path='/root/yxfeng/www27/data/fever/shared_task_dev.json',
+        path=PREPROCESSED_ROOT / 'claims/fever/dev.jsonl',
+        train_path=PREPROCESSED_ROOT / 'claims/fever/train.jsonl',
         choice_dict={
-            'SUPPORTS': (
-                'The evidence supports the claim.'
-            ),
-            'REFUTES': (
-                'The evidence refutes the claim.'
-            ),
+            'SUPPORTS': 'The evidence supports the claim.',
+            'REFUTES': 'The evidence refutes the claim.',
             'NOT ENOUGH INFO': (
                 'The evidence does not contain enough information to support or refute the claim.'
             ),
         },
         doc=(
-            'FEVER (Fact Extraction and VERification) checks claims against Wikipedia. '
-            'A claim is SUPPORTS when the evidence supports it, REFUTES when the evidence '
-            'refutes it, and NOT ENOUGH INFO when Wikipedia does not contain enough information '
-            'to decide. This file is the shared-task development split.'
+            'FEVER checks claims against Wikipedia. Labels are SUPPORTS, REFUTES, '
+            'and NOT ENOUGH INFO.'
         ),
     ),
 
     Benchmark(
         name='scifact',
-        path='/root/yxfeng/www27/data/scifact/claims_dev.json',
+        path=PREPROCESSED_ROOT / 'claims/scifact/dev.jsonl',
+        train_path=PREPROCESSED_ROOT / 'claims/scifact/train.jsonl',
         choice_dict={
-            'SUPPORT': (
-                'The scientific evidence supports the claim.'
-            ),
-            'CONTRADICT': (
-                'The scientific evidence contradicts the claim.'
-            ),
+            'SUPPORT': 'The scientific evidence supports the claim.',
+            'CONTRADICT': 'The scientific evidence contradicts the claim.',
             'NOT ENOUGH INFO': (
                 'The evidence does not contain enough information to support or contradict the claim.'
             ),
         },
         doc=(
-            'SciFact is a scientific claim-verification benchmark. Claims are checked against '
-            'research-paper abstracts and labeled SUPPORT, CONTRADICT, or NOT ENOUGH INFO. '
-            'SUPPORT and CONTRADICT come from the evidence rationales; claims with no rationale '
-            'are NOT ENOUGH INFO. This file is the development claims set.'
+            'SciFact checks scientific claims against research-paper abstracts. '
+            'Labels are SUPPORT, CONTRADICT, and NOT ENOUGH INFO.'
+        ),
+    ),
+
+    Benchmark(
+        name='climate_fever',
+        path=PREPROCESSED_ROOT / 'claims/climate_fever/test.jsonl',
+        choice_dict={
+            'SUPPORTS': 'The evidence supports the climate claim.',
+            'REFUTES': 'The evidence refutes the climate claim.',
+            'NOT ENOUGH INFO': (
+                'The evidence does not contain enough information to support or refute the claim.'
+            ),
+        },
+        doc=(
+            'Climate-FEVER checks climate-related claims against evidence. '
+            'This is the 500-claim test sample.'
+        ),
+    ),
+
+    Benchmark(
+        name='healthver',
+        path=PREPROCESSED_ROOT / 'claims/healthver/test.jsonl',
+        train_path=PREPROCESSED_ROOT / 'claims/healthver/train.jsonl',
+        choice_dict={
+            'SUPPORTS': 'The evidence supports the health claim.',
+            'REFUTES': 'The evidence refutes the health claim.',
+            'NOT ENOUGH INFO': (
+                'The evidence does not contain enough information to support or refute the claim.'
+            ),
+        },
+        doc=(
+            'HealthVer checks real-world health claims against scientific evidence. '
+            'This is the 1000-claim test sample.'
         ),
     ),
 ]
@@ -112,60 +140,83 @@ def load_tokenizer(model_path: str | Path, is_training: bool=False) -> AutoToken
 
 
 
+def _read_jsonl(path: str | Path):
+    with open(path, 'r', encoding='utf-8') as handle:
+        for line in handle:
+            line = line.strip()
+            if line:
+                yield json.loads(line)
+
+
 def load_benchmark(
     benchmark_name: str,
-    limit: int=-1,
+    limit: int = -1,
+    split: str = 'dev',
 ) -> tuple[list[dict], Benchmark]:
+    """Load a normalized claim split.
 
-    def _record_id(item: dict):
-        for key in ('id', 'claim_id', 'claimId'):
-            if item.get(key) is not None:
-                return item[key]
-        return None
-
-    def _record_label(item: dict):
-        if item.get('label') is not None:
-            return item['label']
-        # SciFact stores SUPPORT / CONTRADICT on evidence rationales.
-        # An empty evidence dict is the not-enough-info class.
-        labels = []
-        evidence = item.get('evidence')
-        if isinstance(evidence, dict):
-            for rationales in evidence.values():
-                if not isinstance(rationales, list):
-                    continue
-                for rationale in rationales:
-                    if isinstance(rationale, dict) and rationale.get('label') is not None:
-                        labels.append(rationale['label'])
-        unique = list(dict.fromkeys(labels))
-        if len(unique) == 1:
-            return unique[0]
-        if not unique:
-            return 'NOT ENOUGH INFO'
-        return unique[0]
-
+    The preprocessed files already contain ``id``, ``claim``, ``label`` and
+    ``evidence``.  No evidence filtering or evidence injection is done here;
+    that belongs to the evaluation script.
+    """
     for bench in BENCHMARKS:
         if benchmark_name != bench.name:
             continue
-        benchmark_data: list[dict] = []
-        with open(bench.path, 'r', encoding='utf-8') as f:
-            obj = json.load(f)
-        assert isinstance(obj, list), type(obj)
-        
-        for item in obj:
-            row = {
+        if split == 'train':
+            path = bench.train_path
+            if path is None:
+                raise FileNotFoundError(
+                    f'{benchmark_name} has no normalized training split'
+                )
+        elif split in ('dev', 'test'):
+            path = bench.path
+        else:
+            raise ValueError(f'unknown split {split!r}')
+        if not Path(path).exists():
+            raise FileNotFoundError(
+                f'{benchmark_name}/{split} not preprocessed: {path}'
+            )
+        benchmark_data = []
+        for item in _read_jsonl(path):
+            benchmark_data.append({
+                'id': item.get('id'),
                 'claim': item['claim'],
-                'label': _record_label(item),
-            }
-            record_id = _record_id(item)
-            if record_id is not None:
-                row['id'] = record_id
-            benchmark_data.append(row)
-
-        if limit > 0 and len(benchmark_data) > limit:
+                'label': item['label'],
+                'evidence': item.get('evidence', ''),
+            })
+        if limit > 0:
             benchmark_data = benchmark_data[:limit]
         return benchmark_data, bench
     raise ValueError(f'{benchmark_name} not found!')
+
+
+def load_corpus(
+    benchmark_name: str,
+    limit: int = -1,
+    split: str | None = None,
+) -> list:
+    """Load a normalized corpus as ``Document`` objects.
+
+    ``split`` is accepted for interface compatibility; corpus files are shared
+    across splits.
+    """
+    from src.config import Document
+
+    path = CORPUS_ROOT / f'{benchmark_name}.jsonl'
+    if not path.exists():
+        raise FileNotFoundError(f'{benchmark_name} corpus not found: {path}')
+    documents = []
+    for item in _read_jsonl(path):
+        documents.append(Document(
+            doc_id=str(item.get('doc_id')),
+            title=str(item.get('title') or ''),
+            text=str(item.get('text') or ''),
+            url=str(item.get('url') or ''),
+            date=str(item.get('date') or ''),
+        ))
+        if limit > 0 and len(documents) >= limit:
+            break
+    return documents
 
 
 
