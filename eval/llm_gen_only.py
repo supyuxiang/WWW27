@@ -29,44 +29,94 @@ from src.utils import (
 os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")
 from vllm import LLM, SamplingParams
 
-_LATEX_WRAPPER_RE = re.compile(r"\\(?:text|mathrm|textbf)\s*\{([^{}]*)\}")
+# Math-Verify owns boxed-answer extraction: nested braces, \text{}, \mathrm{},
+# malformed LaTeX, and choosing the final boxed answer are handled upstream.
+# The label matching below is deliberately rule-based because the labels are
+# benchmark-specific strings, not mathematical expressions.
+from math_verify import parse as math_verify_parse
+from math_verify.parser import LatexExtractionConfig
+
+_LATEX_WRAPPER_RE = re.compile(
+    r"\\(?:text|textnormal|mathrm|textbf|operatorname|mbox)\s*\{([^{}]*)\}"
+)
+_BOXED_EXTRACTION = [LatexExtractionConfig(boxed_match_priority=0)]
+_SUPPORT_ALIASES = {"support", "supports", "supported", "s"}
+_REFUTE_ALIASES = {
+    "refute",
+    "refutes",
+    "refuted",
+    "contradict",
+    "contradicts",
+    "contradicted",
+    "r",
+}
+_NEI_ALIASES = {
+    "nei",
+    "not enough info",
+    "not enough information",
+    "not enough evidence",
+    "insufficient evidence",
+    "insufficient information",
+}
 
 
-def _boxed_values(text: str) -> list[str]:
-    values: list[str] = []
-    cursor = 0
-    while True:
-        marker = text.find("\\boxed", cursor)
-        if marker < 0:
-            break
-        opening = text.find("{", marker)
-        if opening < 0:
-            break
-        depth = 0
-        for index in range(opening, len(text)):
-            char = text[index]
-            if char == "{":
-                depth += 1
-            elif char == "}":
-                depth -= 1
-                if depth == 0:
-                    values.append(text[opening + 1 : index])
-                    cursor = index + 1
-                    break
-        else:
-            break
-    return values
+def _normalize_label_text(value: str) -> str:
+    value = str(value).strip()
+    for _ in range(3):
+        value = _LATEX_WRAPPER_RE.sub(r"\1", value)
+    value = value.strip().strip("{}").strip()
+    value = value.strip("$").strip()
+    return " ".join(value.split())
+
+
+def _semantic_key(value: str) -> str:
+    key = _normalize_label_text(value).casefold()
+    key = re.sub(r"[^a-z0-9]+", " ", key).strip()
+    if key in _SUPPORT_ALIASES:
+        return "SUPPORTS"
+    if key in _REFUTE_ALIASES:
+        return "REFUTES"
+    if key in _NEI_ALIASES:
+        return "NOT ENOUGH INFO"
+    return key
+
+
+def _extract_answer_candidates(text: str) -> list[str]:
+    if not text:
+        return []
+    try:
+        parsed = math_verify_parse(
+            text,
+            extraction_config=_BOXED_EXTRACTION,
+            # first_match also exposes the raw extracted text (needed for
+            # textual labels); no_fallback only returns the SymPy object.
+            fallback_mode="first_match",
+        )
+    except Exception:
+        return []
+    raw_strings = [item for item in parsed if isinstance(item, str)]
+    if raw_strings:
+        return raw_strings
+    return [str(item) for item in parsed]
 
 
 def _match_label(value: str, labels: list[str]) -> str | None:
-    folded = " ".join(value.split())
+    normalized = _normalize_label_text(value)
+    folded = normalized.casefold()
+
     exact = {label.casefold(): label for label in labels}
-    if folded.casefold() in exact:
-        return exact[folded.casefold()]
+    if folded in exact:
+        return exact[folded]
+
+    semantic = {_semantic_key(label): label for label in labels}
+    semantic_key = _semantic_key(normalized)
+    if semantic_key in semantic:
+        return semantic[semantic_key]
+
     hits: list[tuple[int, int, str]] = []
     for label in labels:
         pattern = re.compile(rf"(?<!\w){re.escape(label)}(?!\w)", re.IGNORECASE)
-        for match in pattern.finditer(folded):
+        for match in pattern.finditer(normalized):
             hits.append((match.start(), len(label), label))
     if not hits:
         return None
@@ -75,13 +125,14 @@ def _match_label(value: str, labels: list[str]) -> str | None:
 
 
 def parse_generation(text: str, labels: list[str]) -> str | None:
-    boxed = _boxed_values(text or "")
-    if not boxed:
-        return None
-    value = boxed[-1]
-    for _ in range(2):
-        value = _LATEX_WRAPPER_RE.sub(r"\1", value)
-    return _match_label(value, labels)
+    # Math-Verify returns parsed objects plus the raw extracted strings.  The
+    # raw string is the best candidate for a textual label such as SUPPORTS.
+    candidates = _extract_answer_candidates(text)
+    for value in reversed(candidates):
+        matched = _match_label(value, labels)
+        if matched is not None:
+            return matched
+    return None
 
 
 class VLLMGenerator:
