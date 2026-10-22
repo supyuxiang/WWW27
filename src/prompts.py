@@ -40,50 +40,54 @@ def format_fs_one(
     claim: str,
     evidence: str,
     label: str,
-):  
-    def set_to_str(evidence:set) -> str:
-        pass
-
+):
+    evidence_text = (evidence or "").strip()
     lines = [
         f'Claim: {claim}',
         'Decide which verdict applies to the claim.',
+        f'Current evidence:\n{evidence_text}',
+        f'Final answer: \\boxed{{{label}}}',
     ]
-    lines.append(f'Current evidence:\n{set_to_str(evidence)}')
-    lines.append(f'Final answer: \\boxed{label}')
     return '\n'.join(lines)
 
 
 def build_few_shot(
     bench_cls: Benchmark,
-    limit: int=3,
+    limit: int = 3,
+    split: str = 'train',
 ) -> str:
-    # load training set / reference data
-    full_data,_ = load_benchmark(
-        benchmark_name=bench_cls.name,
-        limit=-1
-    )
-    # 筛选出来evidence非空的example
+    """Build few-shot demonstrations from a normalized claim split.
+
+    Only examples with non-empty gold evidence are used.  Benchmarks without
+    a training split fall back to their dev split.
+    """
+    try:
+        full_data, _ = load_benchmark(
+            benchmark_name=bench_cls.name,
+            limit=-1,
+            split=split,
+        )
+    except FileNotFoundError:
+        full_data, _ = load_benchmark(
+            benchmark_name=bench_cls.name,
+            limit=-1,
+            split='dev',
+        )
+
     selected_data = []
     for data in full_data:
-        if data['evidence'] == {}:
+        evidence = (data.get('evidence') or '').strip()
+        if not evidence:
             continue
-        selected_data.append(
-            dict(
-                claim=data['claim'],
-                evidence=data['evidence'],
-                label=data['label']
-            )
-        )
-        if len(selected_data) == limit:
+        selected_data.append({
+            'claim': data['claim'],
+            'evidence': evidence,
+            'label': data['label'],
+        })
+        if len(selected_data) >= limit:
             break
 
-    lines = [
-        format_fs_one(
-            **item
-        ) for item in selected_data
-    ]
-
-    return '\n'.join(lines)
+    return '\n'.join(format_fs_one(**item) for item in selected_data)
 
 
 # for llm-gen
