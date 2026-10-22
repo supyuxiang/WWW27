@@ -13,6 +13,12 @@ import torch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+# Use the vendored Math-Verify checkout first.  It is kept under third_party/
+# so extraction rules can be extended without touching site-packages.
+MATH_VERIFY_ROOT = ROOT / "third_party" / "Math-Verify"
+if (MATH_VERIFY_ROOT / "src").is_dir():
+    sys.path.insert(0, str(MATH_VERIFY_ROOT / "src"))
+
 from src.prompts import (
     SYSTEM_PROMPT,
     prompt4llm_judge,
