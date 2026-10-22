@@ -56,7 +56,12 @@ def build_few_shot(
     limit: int = 0, # 0 means ``len(labels) `
     split: str = 'train',
 ) -> str:
-    
+    '''
+    构建few_shot prompt, 本质是由一系列(claim, evidence, label)三元组拼接而成的prompt,
+    其中，我们刻意要求evidence非空(若某个label的NEI数据的evidence为空,则随机用一个存在的evidence当作这个数据的evidence)
+    这么做的原因是要对齐推理过程————总是要做检索(on/offline)并得到evidence(或相关或不相关)。
+    同时,我们保证每个label被采样的fs_example数目是相同的(通过 num_per_label)
+    '''
     labels = list(bench_cls.choice_dict)
     required = len(labels)
     if limit <= 0:
@@ -75,41 +80,49 @@ def build_few_shot(
             limit=-1,
             split=preferred_split,
         )
-        return [
-            row for row in rows
-            if row.get('label') in labels
-        ]
+        return [ row for row in rows if row['label'] in labels]
 
     pool = _load(split)
+    
     missing = [label for label in labels if not any(
         row.get('label') == label for row in pool
     )]
     assert not missing, missing
 
     # 建立 label -> valid fs_examples的mapping
-    mapping: dict[str, list] = dict()
+    mapping: dict[str, list[tuple[int, dict]]] = dict()
     for label in labels:
-        candidates = [
+        candidates: list[tuple[int,dict]] = [
             (position, row) for position, row in enumerate(pool)
             if row.get('label') == label
         ]
         assert candidates, f'label:{label},candidates:{candidates}'
-        # 保留有evidence的
-        valid = [
-            candidate for candidate in candidates 
-            if candidate[1].get('evidence','').strip()
-        ]
-        mapping[label] = valid
+        mapping[label] = iter(candidates)
 
     selected: list[dict] = []
     selected_positions: set[int] = set()
-    for _ in num_per_label:
+
+    # prepare evidence for NEI (if NEI evidence is {})
+    evidence_for_nei: list[str] = []
+    valid_label = [
+        label for label in labels if mapping[label][0][1]['evidence']
+    ][0]
+    for _, row in next(mapping[valid_label]):
+        evidence_for_nei.append(row['evidence'])
+        if len(evidence_for_nei) == num_per_label:
+            break
+
+    # 正式抽所有label的fs数据
+    for i in num_per_label:
         for label in labels:
             position, row = next(mapping[label])
             selected_positions.add(position)
+            evidence = row['evidence']
+            if not evidence:
+                evidence = evidence_for_nei[i]
             selected.append({
                 'claim': row['claim'],
-                'evidence': row['evidence'],
+                'evidence': evidence,
                 'label': row['label']
             })
     assert len(selected) >= limit, f'selected:{selected}, limit:{limit}'
