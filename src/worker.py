@@ -204,6 +204,45 @@ class LLM_as_Jev(Base):
         )
         return out
 
+
+    # TODO：主要优化
+    def score_batch(
+        self,
+        system_prompt: str,
+        batch_user_prompt: list[str],
+        options: list[str]
+    ) -> list[dict]:
+        num_options = len(options)
+        all_sequences = []   # 所有选项的完整序列（tensor）
+        all_spans = []       # 每个选项在序列中的起止位置 (start, end)
+
+        # 1. 收集所有 prompt 的选项序列和 spans
+        for user_prompt in batch_user_prompt:
+            sequences, spans = self._option_sequences(system_prompt, user_prompt, options)
+            all_sequences.extend(sequences)   # sequences 是 list[tensor]
+            all_spans.extend(spans)           # spans 是 list[tuple]
+
+        # 2. 一次前向传播，得到所有选项的分数
+        scores = self._forward_scores(all_sequences, all_spans)  # shape: [total_options]
+
+        # 3. 按 prompt 分组
+        batch_size = len(batch_user_prompt)
+        scores = scores.view(batch_size, num_options)            # [batch, num_options]
+        probs = F.softmax(scores, dim=-1)                        # [batch, num_options]
+        best_indices = torch.argmax(probs, dim=-1)               # [batch]
+
+        # 4. summary
+        results = []
+        for i in range(batch_size):
+            results.append({
+                'probs': probs[i],               # Tensor, shape [num_options]
+                'scores': scores[i],             # Tensor, shape [num_options]
+                'best_idx': best_indices[i].item()
+            })
+        return results
+
+
+
     def count_params(self, trainable=False):
         if trainable:
             return sum(

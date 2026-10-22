@@ -4,6 +4,7 @@ import argparse
 import json
 import sys
 import time
+from tqdm import tqdm
 from collections import Counter
 from pathlib import Path
 
@@ -11,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from src.worker import LLM_as_Jev
-from src.prompts import prompt4jev_judge
+from src.prompts import prompt4jev_judge, SYSTEM_PROMPT
 from src.utils import (
     Benchmark,
     compute_accuracy,
@@ -21,6 +22,33 @@ from src.utils import (
 DEFAULT_MODEL = "/root/autodl-tmp/models/Qwen3-8B"
 
 
+def run_one(
+    examples: list[dict],
+    bench: Benchmark,
+    jev: LLM_as_Jev,
+    few_shot: str,
+    output_dir: Path,
+    batch_size: int =4
+) -> dict:
+    name = bench.name
+    output_dir.mkdir(parents=True, exist_ok=True)
+    prompts = [
+        prompt4jev_judge(
+            benchmark_cls=bench,
+            claim=item["claim"],
+            few_shot=few_shot,
+            evidence=item["evidence"],
+        )
+        for item in examples
+    ] # list[typle[str, str, list[str]]]
+    user_prompts = [prompt[1] for prompt in prompts]
+    options = prompts[0][-1]
+    for idx in tqdm(range(0, len(user_prompts), batch_size)):
+        batch = user_prompts[idx: idx+batch_size]
+        batch_out = jev.score_batch(SYSTEM_PROMPT, batch, options)
+        pass
+    
+
 def run_benchmark(
     name: str,
     examples: list[dict],
@@ -28,33 +56,24 @@ def run_benchmark(
     model_path: str,
     output_dir: Path,
 ) -> dict:
-    llm = LLM_as_Jev(model_path)
+    jev = LLM_as_Jev(model_path)
     labels = list(bench.choice_dict)
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"jev_only_{name}.jsonl"
-    started = time.perf_counter()
     gold: list[str] = []
     pred: list[str] = []
-    n_errors = 0
-    latencies: list[float] = []
     with output_path.open("w", encoding="utf-8") as handle:
         for index, example in enumerate(examples, start=1):
-            item_started = time.perf_counter()
             prediction = None
             probs: dict[str, float] = {}
-            error = None
-            system_prompt, user_prompt, options = prompt4what_choice(bench, example["claim"])
-            scored = llm.score_options(system_prompt, user_prompt, options)
+            system_prompt, user_prompt, options = prompt4jev_judge(bench, example["claim"])
+            scored = jev.score_options(system_prompt, user_prompt, options)
             best_idx = int(scored["best_idx"])
             prediction = labels[best_idx]
             probs = {label: float(scored["probs"][i]) for i, label in enumerate(labels)}
             gold.append(example["label"])
             pred.append(prediction)
             
-            latency = time.perf_counter() - item_started
-            latencies.append(latency)
-            if error:
-                n_errors += 1
             row = {
                 "benchmark": name,
                 "id": example.get("id"),
@@ -62,29 +81,22 @@ def run_benchmark(
                 "gold": example.get("label"),
                 "prediction": prediction,
                 "judge_probs": probs,
-                "latency_s": latency,
                 "retrieved": False,
-                "search_calls": 0,
-                "error": error,
             }
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
             handle.flush()
             if index % 25 == 0 or index == len(examples):
                 print(f"{name}: {index}/{len(examples)}", flush=True)
-    elapsed = time.perf_counter() - started
     summary = {
         "benchmark": name,
         "model": model_path,
-        "retrieval": "none",
+        "retrieval": gold,
         "n": len(gold),
-        "n_errors": n_errors,
         "n_input": len(examples),
         "accuracy": compute_accuracy(gold, pred),
         "f1": compute_f1(gold, pred, bench),
         "gold_counts": dict(Counter(gold)),
         "prediction_counts": dict(Counter(pred)),
-        "elapsed_s": elapsed,
-        "avg_latency_s": sum(latencies) / len(latencies) if latencies else 0.0,
         "output": str(output_path),
     }
     (output_dir / f"jev_only_{name}.summary.json").write_text(

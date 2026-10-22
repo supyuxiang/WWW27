@@ -131,19 +131,19 @@ def parse_generation(text: str, labels: list[str]) -> str | None:
 
 
 def run_one(
-    name: str,
     examples: list[dict],
     bench: Benchmark,
     generator: VLLMGenerator,
     few_shot: str,
     output_dir: Path,
 ) -> dict:
+    name = bench.name
     output_dir.mkdir(parents=True, exist_ok=True)
     labels = list(bench.choice_dict)
-    filtered = [
-        item for item in examples
-        if (item.get("evidence") or "").strip()
-    ]
+    # filtered = [
+    #     item for item in examples
+    #     if (item.get("evidence") or "").strip()
+    # ]
     prompts = [
         prompt4llm_judge(
             benchmark_cls=bench,
@@ -151,7 +151,7 @@ def run_one(
             few_shot=few_shot,
             evidence=item["evidence"],
         )
-        for item in filtered
+        for item in examples
     ]
     user_prompts = [prompt[1] for prompt in prompts]
     generations = generator.generate_batch(user_prompts)
@@ -161,7 +161,7 @@ def run_one(
     invalid = 0
     trajectory_path = output_dir / f"llm_gen_only_{name}.jsonl"
     with trajectory_path.open("w", encoding="utf-8") as handle:
-        for item, generation in zip(filtered, generations):
+        for item, generation in zip(examples, generations):
             prediction = parse_generation(generation, labels)
             if prediction is None:
                 prediction = "invalid"
