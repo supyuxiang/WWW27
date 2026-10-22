@@ -126,7 +126,7 @@ def build_few_shot(
                 'evidence': evidence,
                 'label': row['label']
             })
-    assert len(selected) >= limit, f'selected:{selected}, limit:{limit}'
+    assert len(selected) >= num_per_label * len(labels), f'selected:{selected}, limit:{num_per_label}, num_label:{len(labels)}'
 
     return '\n'.join(format_fs_one(**item) for item in selected)
 
