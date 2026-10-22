@@ -162,6 +162,7 @@ def load_benchmark(
     for bench in BENCHMARKS:
         if benchmark_name != bench.name:
             continue
+
         if split == 'train':
             path = bench.train_path
             if path is None:
@@ -172,10 +173,9 @@ def load_benchmark(
             path = bench.path
         else:
             raise ValueError(f'unknown split {split!r}')
-        if not Path(path).exists():
-            raise FileNotFoundError(
-                f'{benchmark_name}/{split} not preprocessed: {path}'
-            )
+        
+        assert Path(path).exists(), path
+
         benchmark_data = []
         for item in _read_jsonl(path):
             benchmark_data.append({
@@ -187,6 +187,7 @@ def load_benchmark(
         if limit > 0:
             benchmark_data = benchmark_data[:limit]
         return benchmark_data, bench
+    
     raise ValueError(f'{benchmark_name} not found!')
 
 
@@ -203,8 +204,8 @@ def load_corpus(
     from src.config import Document
 
     path = CORPUS_ROOT / f'{benchmark_name}.jsonl'
-    if not path.exists():
-        raise FileNotFoundError(f'{benchmark_name} corpus not found: {path}')
+    assert path.exists(), path
+    
     documents = []
     for item in _read_jsonl(path):
         documents.append(Document(

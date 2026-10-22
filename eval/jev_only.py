@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.llm import LocalLLM
+from src.worker import LLM_as_Jev
 from src.prompts import prompt4what_choice
 from src.utils import (
     Benchmark,
@@ -28,7 +28,7 @@ def run_benchmark(
     model_path: str,
     output_dir: Path,
 ) -> dict:
-    llm = LocalLLM(model_path)
+    llm = LLM_as_Jev(model_path)
     labels = list(bench.choice_dict)
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"jev_only_{name}.jsonl"

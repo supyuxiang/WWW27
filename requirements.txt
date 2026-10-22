@@ -5,5 +5,7 @@ tqdm>=4
 torch>=2.1
 transformers>=4.40
 huggingface_hub>=0.23
+# Boxed-answer extraction / LaTeX parsing for llm_gen_only evaluation.
+math-verify[antlr4_9_3]>=0.9.0
 # Optional, only for `finetune.train --lora`:
 # peft>=0.10

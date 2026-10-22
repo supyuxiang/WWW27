@@ -1,9 +1,3 @@
-"""Retrieval-augmented JEV baseline.
-
-For each claim we issue one claim-level retrieval query, take the top passages,
-and score the benchmark's own verdict choices.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -16,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.llm import LocalLLM
+from src.worker import LLM_as_Jev
 from src.prompts import prompt4what_choice
 from src.retrieval import BM25Retriever
 from src.retrieval_sqlite import SQLiteBM25Retriever
@@ -97,7 +91,7 @@ def run_benchmark(
     output_dir: Path,
     top_k: int,
 ) -> dict:
-    llm = LocalLLM(model_path)
+    llm = LLM_as_Jev(model_path)
     labels = list(bench.choice_dict)
     retrievers = RetrieverBundle()
     output_dir.mkdir(parents=True, exist_ok=True)
