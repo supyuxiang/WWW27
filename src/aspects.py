@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-import torch
 import random
+from dataclasses import dataclass
+
+import torch
+
 
 
 @dataclass(frozen=True)
