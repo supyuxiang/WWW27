@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import sys
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 import logging
 from abc import ABC, abstractmethod
@@ -86,16 +88,85 @@ class VLLMGenerator:
 class APIGenerator:
     def __init__(
         self,
-        base_url: str,
-        api_key: str,
+        base_url: str = "https://api.deepseek.com",
+        api_key: str | None = None,
+        model: str = "deepseek-flash",
+        max_tokens: int | None = None,
+        enable_thinking: bool = True,
+        reasoning_effort: str = "high",
+        max_workers: int = 8,
+        max_retries: int = 3,
     ):
-        pass
+        resolved_key = api_key or os.environ.get("DEEPSEEK_API_KEY")
+        if not resolved_key:
+            raise ValueError(
+                "Missing API key: pass api_key or set DEEPSEEK_API_KEY"
+            )
+        self.client = OpenAI(
+            api_key=resolved_key,
+            base_url=base_url or "https://api.deepseek.com",
+        )
+        self.model = model
+        self.max_tokens = max_tokens
+        self.enable_thinking = enable_thinking
+        self.reasoning_effort = reasoning_effort
+        self.max_workers = max_workers
+        self.max_retries = max_retries
+        self.llm_name = model
 
-    def _format_one(self,):
-        pass
+    def _format_one(self, user_prompt: str) -> list[dict[str, str]]:
+        return [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ]
 
-    def generate_batch(self,):
-        pass
+    def _generate_one(self, user_prompt: str) -> str:
+        kwargs: dict[str, Any] = {
+            "model": self.model,
+            "messages": self._format_one(user_prompt),
+            "stream": False,
+        }
+        if self.max_tokens is not None:
+            kwargs["max_tokens"] = self.max_tokens
+        if self.enable_thinking:
+            kwargs["reasoning_effort"] = self.reasoning_effort
+            kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
+
+        last_error: Exception | None = None
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                response = self.client.chat.completions.create(**kwargs)
+                content = response.choices[0].message.content or ""
+                return content.strip()
+            except Exception as exc:
+                last_error = exc
+                logger.warning(
+                    "API request failed (%s/%s): %s",
+                    attempt,
+                    self.max_retries,
+                    exc,
+                )
+                if attempt < self.max_retries:
+                    time.sleep(min(2 ** (attempt - 1), 8))
+        assert last_error is not None
+        raise last_error
+
+    def generate_batch(self, prompts: list[str]) -> list[str]:
+        if not prompts:
+            return []
+        workers = max(1, min(self.max_workers, len(prompts)))
+        if workers == 1:
+            return [self._generate_one(prompt) for prompt in prompts]
+
+        results: list[str] = [""] * len(prompts)
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                pool.submit(self._generate_one, prompt): index
+                for index, prompt in enumerate(prompts)
+            }
+            for future in as_completed(futures):
+                results[futures[future]] = future.result()
+        return results
 
 
 ################    base     #################
