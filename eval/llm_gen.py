@@ -125,8 +125,13 @@ def main() -> None:
         )
     elif args.generator == 'api':
         generator = APIGenerator(
-            base_url='',
-            api_key=''
+            base_url='https//api.deepseek.com',
+            api_key='',
+            model='deepseek-flash',
+            max_tokens=args.max_token,
+            enable_thinking=True,
+            reasoning_effort='high',
+            max_retries=3
         )
         pass
 
