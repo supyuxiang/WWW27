@@ -11,8 +11,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.worker import LLM_as_Jev
-from src.prompts import prompt4jev_judge, SYSTEM_PROMPT
+from src.worker import (
+    LLM_as_Jev,
+    API_Jev
+)
+from src.prompts import (
+    prompt4jev_judge,
+    SYSTEM_PROMPT
+)
 from src.utils import (
     Benchmark,
     compute_accuracy,
@@ -25,7 +31,7 @@ DEFAULT_MODEL = "/root/autodl-tmp/models/Qwen3-8B"
 def run_one(
     examples: list[dict],
     bench: Benchmark,
-    jev: LLM_as_Jev,
+    jev: LLM_as_Jev | API_Jev,
     few_shot: str,
     output_dir: Path,
     batch_size: int =4
