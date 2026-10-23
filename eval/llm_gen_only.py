@@ -7,6 +7,7 @@ import re
 import sys
 from collections import Counter
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -22,23 +23,22 @@ from src.utils import (
     load_benchmark,
     parse_generation
 )
-from src.worker import VLLMGenerator, APIGenerator
+from src.worker import (
+    VLLMGenerator,
+    APIGenerator
+)
 
 
 def run_one(
     examples: list[dict],
     bench: Benchmark,
-    generator: VLLMGenerator,
+    generator: VLLMGenerator | APIGenerator,
     few_shot: str,
     output_dir: Path,
-) -> dict:
+) -> dict[str,Any]:
     name = bench.name
     output_dir.mkdir(parents=True, exist_ok=True)
     labels = list(bench.choice_dict)
-    # filtered = [
-    #     item for item in examples
-    #     if (item.get("evidence") or "").strip()
-    # ]
     prompts = [
         prompt4llm_judge(
             benchmark_cls=bench,
@@ -103,6 +103,7 @@ def main() -> None:
     parser.add_argument("--gpu-memory-utilization", type=float, default=0.92)
     parser.add_argument("--max-model-len", type=int, default=8192)
     parser.add_argument("--fs-limit", type=int, default=0)
+    parser.add_argument('--generator', choice=['vllm','api'], default='vllm')
     parser.add_argument(
         "--enable-thinking",
         action=argparse.BooleanOptionalAction,
@@ -112,14 +113,22 @@ def main() -> None:
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    generator = VLLMGenerator(
-        model_path=args.model,
-        tensor_parallel_size=args.tensor_parallel_size,
-        gpu_memory_utilization=args.gpu_memory_utilization,
-        max_model_len=args.max_model_len,
-        max_new_tokens=args.max_new_tokens,
-        enable_thinking=args.enable_thinking,
-    )
+
+    if args.generator == 'vllm':
+        generator = VLLMGenerator(
+            model_path=args.model,
+            tensor_parallel_size=args.tensor_parallel_size,
+            gpu_memory_utilization=args.gpu_memory_utilization,
+            max_model_len=args.max_model_len,
+            max_new_tokens=args.max_new_tokens,
+            enable_thinking=args.enable_thinking,
+        )
+    elif args.generator == 'api':
+        generator = APIGenerator(
+            base_url='',
+            api_key=''
+        )
+        pass
 
     summaries: dict[str, dict] = {}
     for name in args.benchmarks:
