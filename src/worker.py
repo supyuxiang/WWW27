@@ -384,37 +384,7 @@ class LLM_as_Jev(Base):
     #     return stacked.view(-1) # (num_choice,)
 
 
-
-def main_test():
-    model = LLM_as_Jev(model_path = '/root/autodl-tmp/models/Qwen2.5-7B-Instruct')
-    system_prompt = '你是一个新闻的判断者，善于判断新闻的正确性'
-    user_prompt = '新闻：美国总统特朗普出生于2024年12月11日。 \n这个新闻是对的吗？给出你的选择: [1]True,[2]False'
-    options=['1','2']
-    result = model.score_options(system_prompt, user_prompt, options)
-    print(f"Options: {options}")
-    print(f"Scores: {result['scores'].tolist()}")
-    print(f"Probs:  {result['probs'].tolist()}")
-    print(f"Best index: {result['best_idx']} -> '{options[result['best_idx']]}'")
-    
-    breakpoint()
-
-    print("\n" + "=" * 50)
-    print("Test 2: score_batch (multiple prompts)")
-    batch_prompts = [
-        '新闻：地球是平的。\n这个新闻是对的吗？给出你的选择: [1]True,[2]False',
-        '新闻：水在100摄氏度沸腾。\n这个新闻是对的吗？给出你的选择: [1]True,[2]False',
-    ]
-    batch_results = model.score_batch(system_prompt, batch_prompts, options, max_sequences=4)
-    for i, res in enumerate(batch_results):
-        print(f"\nPrompt {i}: {batch_prompts[i][:30]}...")
-        print(f"  Scores: {res['scores'].tolist()}")
-        print(f"  Probs:  {res['probs'].tolist()}")
-        print(f"  Best index: {res['best_idx']} -> '{options[res['best_idx']]}'")
-    breakpoint()
-
-
-
-#########TODO?
+###TODO?
 
 class Laya(Base):
     _cls = 'laya'
@@ -442,6 +412,56 @@ class Kev(Base):
         pass
     def score_options(self):
         pass
+
+
+
+
+
+##########    retriever    #############
+
+class Retriever:
+    def __init__(
+        self,
+    ):
+        pass
+
+    def retrieve(
+        self,
+    ):
+        pass
+
+
+
+
+##########################
+
+
+def main_test():
+    model = LLM_as_Jev(model_path = '/root/autodl-tmp/models/Qwen2.5-7B-Instruct')
+    system_prompt = '你是一个新闻的判断者，善于判断新闻的正确性'
+    user_prompt = '新闻：美国总统特朗普出生于2024年12月11日。 \n这个新闻是对的吗？给出你的选择: [1]True,[2]False'
+    options=['1','2']
+    result = model.score_options(system_prompt, user_prompt, options)
+    print(f"Options: {options}")
+    print(f"Scores: {result['scores'].tolist()}")
+    print(f"Probs:  {result['probs'].tolist()}")
+    print(f"Best index: {result['best_idx']} -> '{options[result['best_idx']]}'")
+    
+    breakpoint()
+
+    print("\n" + "=" * 50)
+    print("Test 2: score_batch (multiple prompts)")
+    batch_prompts = [
+        '新闻：地球是平的。\n这个新闻是对的吗？给出你的选择: [1]True,[2]False',
+        '新闻：水在100摄氏度沸腾。\n这个新闻是对的吗？给出你的选择: [1]True,[2]False',
+    ]
+    batch_results = model.score_batch(system_prompt, batch_prompts, options, max_sequences=4)
+    for i, res in enumerate(batch_results):
+        print(f"\nPrompt {i}: {batch_prompts[i][:30]}...")
+        print(f"  Scores: {res['scores'].tolist()}")
+        print(f"  Probs:  {res['probs'].tolist()}")
+        print(f"  Best index: {res['best_idx']} -> '{options[res['best_idx']]}'")
+    breakpoint()
 
 
 if __name__ == '__main__':
