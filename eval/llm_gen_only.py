@@ -22,7 +22,7 @@ from src.utils import (
     load_benchmark,
     parse_generation
 )
-from src.worker import VLLMGenerator
+from src.worker import VLLMGenerator, APIGenerator
 
 
 def run_one(
