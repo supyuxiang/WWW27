@@ -304,6 +304,9 @@ class LLM_as_Jev(Base):
         ]
 
 
+    def decode(self, tokens: list[int]) -> str:
+        return self.tokenizer.decode(tokens, skip_special_tokens=True)
+
 
     def count_params(self, trainable=False):
         if trainable:
@@ -314,41 +317,51 @@ class LLM_as_Jev(Base):
                 [p.numel() for p in self.model.parameters()]
             )
 
-    # def _forward_scores(
-    #     self,
-    #     sequences: list[torch.Tensor],
-    #     spans: list[tuple[int,int]]
-    # ):
-    #     pad_id = self.tokenizer.pad_token_id
-    #     width = max(end for _, end in spans)
-    #     input_ids = torch.full(
-    #         (len(sequences), width),
-    #         pad_id,
-    #         dtype=torch.long,
-    #         device=self.device
-    #     )
-    #     attention_mask = torch.zeros_like(input_ids)
-    #     for idx, seq in enumerate(sequences):
-    #         seq_len = int(seq.numel())
-    #         input_ids[idx,:seq_len] = seq
-    #         attention_mask[idx, :seq_len] = 1
-    #     with torch.inference_mode():
-    #         output = self.model(
-    #             input_ids=input_ids,
-    #             attention_mask=attention_mask,
-    #             use_cache=False
-    #         )
-    #         logits = output.logits  # (num_seq, seq_len, vocab_size)
-    #         scores:list[torch.Tensor] = []
-    #         for idx, (start, end) in enumerate(spans):
-    #             total = None
-    #             for i in range(start, end):
-    #                 token_id = int(input_ids[idx,i].item())
-    #                 logp = torch.log_softmax(logits[idx,i-1].float(),dim=-1)[token_id].view(-1)
-    #                 total = logp if total is None else (total + logp)
-    #             scores.append(total)
-    #         stacked: torch.Tensor = torch.stack(scores,dim=0)
-    #     return stacked.view(-1) # (num_choice,)
+    def _forward_scores_vanilla(
+        self,
+        sequences: list[torch.Tensor],
+        spans: list[tuple[int,int]],
+        is_training: bool = False
+    ):
+        pad_id = self.tokenizer.pad_token_id
+        width = max(end for _, end in spans)
+        input_ids = torch.full(
+            (len(sequences), width),
+            pad_id,
+            dtype=torch.long,
+            device=self.device
+        )
+        attention_mask = torch.zeros_like(input_ids)
+        for idx, seq in enumerate(sequences):
+            seq_len = int(seq.numel())
+            input_ids[idx,:seq_len] = seq
+            attention_mask[idx, :seq_len] = 1
+        if is_training:
+            self.model.train()
+            output = self.model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                use_cache=False,
+            )
+        else:
+            with torch.inference_mode():
+                self.model.eval()
+                output = self.model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    use_cache=False
+                )
+            logits = output.logits  # (num_seq, seq_len, vocab_size)
+            scores:list[torch.Tensor] = []
+            for idx, (start, end) in enumerate(spans):
+                total = None
+                for i in range(start, end):
+                    token_id = int(input_ids[idx,i].item())
+                    logp = torch.log_softmax(logits[idx,i-1].float(),dim=-1)[token_id].view(-1)
+                    total = logp if total is None else (total + logp)
+                scores.append(total)
+            stacked: torch.Tensor = torch.stack(scores,dim=0)
+        return stacked.view(-1) # (num_choice,)
 
 
 
