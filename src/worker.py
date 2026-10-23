@@ -320,53 +320,53 @@ class LLM_as_Jev(Base):
                 [p.numel() for p in self.model.parameters()]
             )
 
-    def _forward_scores_vanilla(
-        self,
-        sequences: list[torch.Tensor],
-        spans: list[tuple[int,int]],
-        is_training: bool = False
-    ):
-        pad_id = self.tokenizer.pad_token_id
-        width = max(end for _, end in spans)
-        input_ids = torch.full(
-            (len(sequences), width),
-            pad_id,
-            dtype=torch.long,
-            device=self.device
-        )
-        attention_mask = torch.zeros_like(input_ids)
-        for idx, seq in enumerate(sequences):
-            seq_len = int(seq.numel())
-            input_ids[idx,:seq_len] = seq
-            attention_mask[idx, :seq_len] = 1
+    # def _forward_scores_vanilla(
+    #     self,
+    #     sequences: list[torch.Tensor],
+    #     spans: list[tuple[int,int]],
+    #     is_training: bool = False
+    # ):
+    #     pad_id = self.tokenizer.pad_token_id
+    #     width = max(end for _, end in spans)
+    #     input_ids = torch.full(
+    #         (len(sequences), width),
+    #         pad_id,
+    #         dtype=torch.long,
+    #         device=self.device
+    #     )
+    #     attention_mask = torch.zeros_like(input_ids)
+    #     for idx, seq in enumerate(sequences):
+    #         seq_len = int(seq.numel())
+    #         input_ids[idx,:seq_len] = seq
+    #         attention_mask[idx, :seq_len] = 1
 
-        if is_training:
-            self.model.train()
-            output = self.model(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                use_cache=False,
-            )
-        else:
-            with torch.inference_mode():
-                self.model.eval()
-                output = self.model(
-                    input_ids=input_ids,
-                    attention_mask=attention_mask,
-                    use_cache=False
-                )
+    #     if is_training:
+    #         self.model.train()
+    #         output = self.model(
+    #             input_ids=input_ids,
+    #             attention_mask=attention_mask,
+    #             use_cache=False,
+    #         )
+    #     else:
+    #         with torch.inference_mode():
+    #             self.model.eval()
+    #             output = self.model(
+    #                 input_ids=input_ids,
+    #                 attention_mask=attention_mask,
+    #                 use_cache=False
+    #             )
                 
-        logits = output.logits  # (num_seq, seq_len, vocab_size)
-        scores:list[torch.Tensor] = []
-        for idx, (start, end) in enumerate(spans):
-            total = None
-            for i in range(start, end):
-                token_id = int(input_ids[idx,i].item())
-                logp = torch.log_softmax(logits[idx,i-1].float(),dim=-1)[token_id].view(-1)
-                total = logp if total is None else (total + logp)
-                scores.append(total)
-            stacked: torch.Tensor = torch.stack(scores,dim=0)
-        return stacked.view(-1) # (num_choice,)
+    #     logits = output.logits  # (num_seq, seq_len, vocab_size)
+    #     scores:list[torch.Tensor] = []
+    #     for idx, (start, end) in enumerate(spans):
+    #         total = None
+    #         for i in range(start, end):
+    #             token_id = int(input_ids[idx,i].item())
+    #             logp = torch.log_softmax(logits[idx,i-1].float(),dim=-1)[token_id].view(-1)
+    #             total = logp if total is None else (total + logp)
+    #             scores.append(total)
+    #         stacked: torch.Tensor = torch.stack(scores,dim=0)
+    #     return stacked.view(-1) # (num_choice,)
 
 
 
@@ -375,12 +375,26 @@ def main_test():
     system_prompt = '你是一个新闻的判断者，善于判断新闻的正确性'
     user_prompt = '新闻：美国总统特朗普出生于2024年12月11日。 \n这个新闻是对的吗？给出你的选择: [1]True,[2]False'
     options=['1','2']
-    out = model.score_options(
-        system_prompt,
-        user_prompt,
-        options
-    )
+    result = model.score_options(system_prompt, user_prompt, options)
+    print(f"Options: {options}")
+    print(f"Scores: {result['scores'].tolist()}")
+    print(f"Probs:  {result['probs'].tolist()}")
+    print(f"Best index: {result['best_idx']} -> '{options[result['best_idx']]}'")
     
+    breakpoint()
+
+    print("\n" + "=" * 50)
+    print("Test 2: score_batch (multiple prompts)")
+    batch_prompts = [
+        '新闻：地球是平的。\n这个新闻是对的吗？给出你的选择: [1]True,[2]False',
+        '新闻：水在100摄氏度沸腾。\n这个新闻是对的吗？给出你的选择: [1]True,[2]False',
+    ]
+    batch_results = model.score_batch(system_prompt, batch_prompts, options, max_sequences=4)
+    for i, res in enumerate(batch_results):
+        print(f"\nPrompt {i}: {batch_prompts[i][:30]}...")
+        print(f"  Scores: {res['scores'].tolist()}")
+        print(f"  Probs:  {res['probs'].tolist()}")
+        print(f"  Best index: {res['best_idx']} -> '{options[res['best_idx']]}'")
     breakpoint()
 
 
