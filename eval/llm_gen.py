@@ -97,12 +97,12 @@ def main() -> None:
     parser.add_argument("--benchmarks", nargs="+", default=["averitec", "fever", "scifact", 'healthver'])
     parser.add_argument("--model", default="/root/autodl-tmp/models/Qwen3-8B")
     parser.add_argument("--limit", type=int, default=-1)
-    parser.add_argument("--output-dir", default="/root/autodl-tmp/www27/llm_gen_only")
-    parser.add_argument("--max-new-tokens", type=int, default=1024)
-    parser.add_argument("--tensor-parallel-size", type=int, default=1)
-    parser.add_argument("--gpu-memory-utilization", type=float, default=0.92)
-    parser.add_argument("--max-model-len", type=int, default=8192)
-    parser.add_argument("--fs-limit", type=int, default=0)
+    parser.add_argument("--output_dir", default="/root/autodl-tmp/www27/llm_gen_only")
+    parser.add_argument("--max_tokens", type=int, default=1024)
+    parser.add_argument("--tensor_parallel_size", type=int, default=1)
+    parser.add_argument("--gpu_memory_utilization", type=float, default=0.92)
+    parser.add_argument("--max_model_len", type=int, default=8192)
+    parser.add_argument("--fs_limit", type=int, default=0)
     parser.add_argument('--generator', choice=['vllm','api'], default='vllm')
     parser.add_argument(
         "--enable-thinking",
@@ -120,7 +120,7 @@ def main() -> None:
             tensor_parallel_size=args.tensor_parallel_size,
             gpu_memory_utilization=args.gpu_memory_utilization,
             max_model_len=args.max_model_len,
-            max_new_tokens=args.max_new_tokens,
+            max_tokens=args.max_tokens,
             enable_thinking=args.enable_thinking,
         )
     elif args.generator == 'api':
