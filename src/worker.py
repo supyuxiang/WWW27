@@ -148,9 +148,10 @@ class LLM_as_Jev(Base):
         spans:list[tuple[int,int]] = []
         for option in options:
             # 每一个sequence分别用tokenizer进行encode，最终存在list中以便后续整体padding
-            full_ids: torch.Tensor = self.encode(prefix + option).to(torch.long).view(1,-1)
-            end = int(full_ids.numel())
+            full_seq = prefix + option
+            full_ids: torch.Tensor = self.encode(full_seq).to(torch.long).view(1,-1)
             sequences.append(full_ids)
+            end = int(full_ids.numel())
             spans.append(
                 (start, end)
             )
@@ -162,16 +163,14 @@ class LLM_as_Jev(Base):
         spans: list[tuple[int, int]],
         is_training: bool = False,
     ) -> torch.Tensor:
-        if not sequences or len(sequences) != len(spans):
-            raise ValueError("sequences 和 spans 必须非空且长度一致")
-
-        pad_id = self.tokenizer.pad_token_id
+        assert sequences and len(sequences) == len(spans), f'{sequences}_{len(sequences)}_{len(spans)}'
 
         num_sequences = len(sequences)
-        width = max(int(seq.numel()) for seq in sequences)
-
+        max_len = max(int(seq.numel()) for seq in sequences)
+        pad_id = self.tokenizer.pad_token_id
+        
         input_ids = torch.full(
-            (num_sequences, width),
+            (num_sequences, max_len),
             pad_id,
             dtype=torch.long,
             device=self.device
@@ -223,7 +222,7 @@ class LLM_as_Jev(Base):
             dtype=torch.float32,
             device=self.device,
         )
-        scores.index_add_(0, rows, token_log_probs)
+        scores.index_add_(dim=0, index=rows, source=token_log_probs)
 
         return scores # (num_cpotions,)
 

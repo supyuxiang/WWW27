@@ -30,6 +30,7 @@ PREPROCESSED_ROOT = Path('/root/autodl-tmp/benchmark_dsh/preprocessed')
 CORPUS_ROOT = PREPROCESSED_ROOT / 'corpus'
 
 
+# averitec, fever, scifact, healthver
 BENCHMARKS = [
     Benchmark(
         name='averitec',
