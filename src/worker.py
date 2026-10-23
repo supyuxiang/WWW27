@@ -35,7 +35,7 @@ class VLLMGenerator:
         tensor_parallel_size: int = torch.cuda.device_count(),
         gpu_memory_utilization: float = 0.92,
         max_model_len: int = 8192,
-        max_new_tokens: int = 1024,
+        max_tokens: int = 1024,
         enable_thinking: bool = False,
     ):
         self.enable_thinking = enable_thinking
@@ -48,11 +48,16 @@ class VLLMGenerator:
         )
         self.llm_name = str(model_path).split("/")[-1]
         self.tokenizer = load_tokenizer(model_path, is_training=False)
-        self.sp = SamplingParams(
+
+        sp_kwargs = dict(
             temperature=0.0,
-            max_tokens=max_new_tokens,
-            skip_special_tokens=True,
+            max_tokens=max_tokens,
+            skip_special_tokens=True
         )
+        if enable_thinking:
+            sp_kwargs['enable_thinking'] = True
+            
+        self.sp = SamplingParams(**sp_kwargs)
 
     def _format_one(self, user_prompt: str, add_generation_prompt: bool=True) -> str:
         messages = [
