@@ -85,10 +85,6 @@ class VLLMGenerator:
 ################    base     #################
 
 class Base(ABC):
-    
-    @abstractmethod
-    def encode(self, text:str) -> Any:
-        pass
 
     @abstractmethod
     def score_options(
@@ -96,7 +92,7 @@ class Base(ABC):
         system_prompt: str,
         user_prompt: str,
         options: list[str]
-    ) -> Any:
+    ) -> dict[str,Any]:
         pass
 
 
