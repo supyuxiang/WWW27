@@ -8,8 +8,6 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-import torch
-
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
@@ -22,112 +20,9 @@ from src.utils import (
     compute_accuracy,
     compute_f1,
     load_benchmark,
+    parse_generation
 )
 from src.worker import VLLMGenerator
-
-
-MATH_VERIFY_ROOT = ROOT / "third_party" / "Math-Verify"
-if (MATH_VERIFY_ROOT / "src").is_dir():
-    sys.path.insert(0, str(MATH_VERIFY_ROOT / "src"))
-
-from math_verify import parse as math_verify_parse
-from math_verify.parser import LatexExtractionConfig
-
-_LATEX_WRAPPER_RE = re.compile(
-    r"\\(?:text|textnormal|mathrm|textbf|operatorname|mbox)\s*\{([^{}]*)\}"
-)
-_BOXED_EXTRACTION = [LatexExtractionConfig(boxed_match_priority=0)]
-_SUPPORT_ALIASES = {"support", "supports", "supported", "s"}
-_REFUTE_ALIASES = {
-    "refute",
-    "refutes",
-    "refuted",
-    "contradict",
-    "contradicts",
-    "contradicted",
-    "r",
-}
-_NEI_ALIASES = {
-    "nei",
-    "not enough info",
-    "not enough information",
-    "not enough evidence",
-    "insufficient evidence",
-    "insufficient information",
-}
-
-
-def _normalize_label_text(value: str) -> str:
-    value = str(value).strip()
-    for _ in range(3):
-        value = _LATEX_WRAPPER_RE.sub(r"\1", value)
-    value = value.strip().strip("{}").strip()
-    value = value.strip("$").strip()
-    return " ".join(value.split())
-
-
-def _semantic_key(value: str) -> str:
-    key = _normalize_label_text(value).casefold()
-    key = re.sub(r"[^a-z0-9]+", " ", key).strip()
-    if key in _SUPPORT_ALIASES:
-        return "SUPPORTS"
-    if key in _REFUTE_ALIASES:
-        return "REFUTES"
-    if key in _NEI_ALIASES:
-        return "NOT ENOUGH INFO"
-    return key
-
-
-def _extract_answer_candidates(text: str) -> list[str]:
-    if not text:
-        return []
-    try:
-        parsed = math_verify_parse(
-            text,
-            extraction_config=_BOXED_EXTRACTION,
-            # first_match also exposes the raw extracted text (needed for
-            # textual labels); no_fallback only returns the SymPy object.
-            fallback_mode="first_match",
-        )
-    except Exception:
-        return []
-    raw_strings = [item for item in parsed if isinstance(item, str)]
-    if raw_strings:
-        return raw_strings
-    return [str(item) for item in parsed]
-
-
-def _match_label(value: str, labels: list[str]) -> str | None:
-    normalized = _normalize_label_text(value)
-    folded = normalized.casefold()
-
-    exact = {label.casefold(): label for label in labels}
-    if folded in exact:
-        return exact[folded]
-
-    semantic = {_semantic_key(label): label for label in labels}
-    semantic_key = _semantic_key(normalized)
-    if semantic_key in semantic:
-        return semantic[semantic_key]
-
-    hits: list[tuple[int, int, str]] = []
-    for label in labels:
-        pattern = re.compile(rf"(?<!\w){re.escape(label)}(?!\w)", re.IGNORECASE)
-        for match in pattern.finditer(normalized):
-            hits.append((match.start(), len(label), label))
-    if not hits:
-        return None
-    hits.sort(key=lambda item: (item[0], item[1]))
-    return hits[-1][2]
-
-
-def parse_generation(text: str, labels: list[str]) -> str | None:
-    candidates = _extract_answer_candidates(text)
-    for value in reversed(candidates):
-        matched = _match_label(value, labels)
-        if matched is not None:
-            return matched
-    return None
 
 
 def run_one(
