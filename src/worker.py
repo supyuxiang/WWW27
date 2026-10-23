@@ -325,7 +325,6 @@ class LLM_as_Jev(Base):
     def decode(self, tokens: list[int]) -> str:
         return self.tokenizer.decode(tokens, skip_special_tokens=True)
 
-
     def count_params(self, trainable=False):
         if trainable:
             return sum(
