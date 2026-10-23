@@ -60,11 +60,14 @@ class VLLMGenerator:
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
         ]
+        extra_kwargs = dict()
+        if self.enable_thinking:
+            extra_kwargs['enable_thinking'] = True
         return self.tokenizer.apply_chat_template(
             messages,
             tokenize=False,
             add_generation_prompt=add_generation_prompt,
-            enable_thinking=self.enable_thinking,
+            **extra_kwargs
         )
 
     def generate_batch(self, prompts: list[str]) -> list[str]:
@@ -336,6 +339,7 @@ class LLM_as_Jev(Base):
             seq_len = int(seq.numel())
             input_ids[idx,:seq_len] = seq
             attention_mask[idx, :seq_len] = 1
+
         if is_training:
             self.model.train()
             output = self.model(
@@ -351,14 +355,15 @@ class LLM_as_Jev(Base):
                     attention_mask=attention_mask,
                     use_cache=False
                 )
-            logits = output.logits  # (num_seq, seq_len, vocab_size)
-            scores:list[torch.Tensor] = []
-            for idx, (start, end) in enumerate(spans):
-                total = None
-                for i in range(start, end):
-                    token_id = int(input_ids[idx,i].item())
-                    logp = torch.log_softmax(logits[idx,i-1].float(),dim=-1)[token_id].view(-1)
-                    total = logp if total is None else (total + logp)
+                
+        logits = output.logits  # (num_seq, seq_len, vocab_size)
+        scores:list[torch.Tensor] = []
+        for idx, (start, end) in enumerate(spans):
+            total = None
+            for i in range(start, end):
+                token_id = int(input_ids[idx,i].item())
+                logp = torch.log_softmax(logits[idx,i-1].float(),dim=-1)[token_id].view(-1)
+                total = logp if total is None else (total + logp)
                 scores.append(total)
             stacked: torch.Tensor = torch.stack(scores,dim=0)
         return stacked.view(-1) # (num_choice,)
