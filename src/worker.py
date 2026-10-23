@@ -12,6 +12,7 @@ import torch.nn.functional as F
 from transformers import AutoModelForCausalLM
 from vllm import LLM, SamplingParams
 os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")
+from openai import OpenAI
 
 ROOT = Path(__file__).parents[1].resolve()
 sys.path.insert(0,str(ROOT))
@@ -26,6 +27,7 @@ from src.prompts import (
 )
 
 logger = logging.getLogger(__file__)
+
 
 
 class VLLMGenerator:
@@ -80,6 +82,20 @@ class VLLMGenerator:
         outputs = self.llm.generate(formatted, self.sp)
         return [output.outputs[0].text.strip() for output in outputs]
 
+
+class APIGenerator:
+    def __init__(
+        self,
+        base_url: str,
+        api_key: str,
+    ):
+        pass
+
+    def _format_one(self,):
+        pass
+
+    def generate_batch(self,):
+        pass
 
 
 ################    base     #################
