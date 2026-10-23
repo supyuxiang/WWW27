@@ -130,7 +130,7 @@ class LLM_as_Jev(Base):
         )['input_ids'].to(self.device)
         return encoded # torch.Tensor
 
-    def _option_sequences(
+    def get_sequences(
         self,
         system_prompt: str,
         user_prompt:str,
@@ -234,7 +234,7 @@ class LLM_as_Jev(Base):
         user_prompt: str,
         options: list[str]
     ) -> dict:
-        sequences, spans = self._option_sequences(system_prompt, user_prompt, options)
+        sequences, spans = self.get_sequences(system_prompt, user_prompt, options)
         scores = self._forward_scores(sequences, spans)
         prob_distribution = F.softmax(scores,dim=-1)
         best_idx = int(torch.argmax(prob_distribution,dim=-1))
@@ -267,7 +267,7 @@ class LLM_as_Jev(Base):
         # prompt_0 + option_0, prompt_0 + option_1, ...
         # prompt_1 + option_0, prompt_1 + option_1, ...
         for user_prompt in batch_user_prompt:
-            seqs, seq_spans = self._option_sequences(
+            seqs, seq_spans = self.get_sequences(
                 system_prompt,
                 user_prompt,
                 options,
