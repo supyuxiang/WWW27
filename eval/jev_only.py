@@ -139,6 +139,7 @@ def main() -> None:
         nargs="+",
         default=["averitec", "fever", "scifact", "healthver"],
     )
+    parser.add_argument('--jev_type', choice=['llm','api'], default='llm')
     parser.add_argument("--model_path", default="/root/autodl-tmp/models/Qwen3-8B")
     parser.add_argument("--limit", type=int, default=-1, help="<=0 means the full split")
     parser.add_argument("--output_dir", default="")
@@ -160,7 +161,11 @@ def main() -> None:
     )
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    jev = LLM_as_Jev(model_path=args.model_path)
+    if args.jev_type == 'llm':
+        jev = LLM_as_Jev(model_path=args.model_path)
+    else:
+        jev = API_Jev()
+        
     summaries: dict[str, dict] = {}
     for name in args.benchmarks:
         examples, bench = load_benchmark(name, limit=args.limit)
