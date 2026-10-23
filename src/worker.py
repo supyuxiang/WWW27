@@ -1,30 +1,29 @@
 from __future__ import annotations
 
-import logging
-from abc import ABC, abstractmethod
-from typing import Any
-import torch
-import torch.nn.functional as F
-from transformers import AutoModelForCausalLM
-
 import os
 import sys
 from pathlib import Path
+import logging
+from abc import ABC, abstractmethod
+from typing import Any
+
+import torch
+import torch.nn.functional as F
+from transformers import AutoModelForCausalLM
+from vllm import LLM, SamplingParams
+os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")
 
 ROOT = Path(__file__).parents[1].resolve()
 sys.path.insert(0,str(ROOT))
 
 from src.prompts import ASSISTANT_PREFILL
-
 from src.utils import (
     load_tokenizer
 )
-from src.prompts import format_prefix4jev, SYSTEM_PROMPT
-
-from vllm import LLM, SamplingParams
-
-os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")
-
+from src.prompts import (
+    format_prefix4jev,
+    SYSTEM_PROMPT
+)
 
 logger = logging.getLogger(__file__)
 
