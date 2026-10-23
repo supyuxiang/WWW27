@@ -383,6 +383,21 @@ class LLM_as_Jev(Base):
     #     return stacked.view(-1) # (num_choice,)
 
 
+
+class API_Jev(Base):
+    def __init__(
+        self,
+    ):
+        super().__init__()
+        pass
+
+    def score_batch(
+        self,
+    ):
+        pass
+
+
+
 ###TODO?
 
 class Laya(Base):
