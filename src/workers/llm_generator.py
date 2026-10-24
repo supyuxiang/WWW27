@@ -8,12 +8,10 @@ from pathlib import Path
 import logging
 from abc import ABC, abstractmethod
 from typing import Any
-from collections import defaultdict
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 
 import torch
 import torch.nn.functional as F
-from transformers import AutoModelForCausalLM
 from vllm import LLM, SamplingParams
 os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")
 from openai import OpenAI
@@ -21,19 +19,8 @@ from openai import OpenAI
 ROOT = Path(__file__).parents[2].resolve()
 sys.path.insert(0,str(ROOT))
 
-from src.utils import (
-    load_tokenizer,
-    best_passage
-)
-from src.prompts import (
-    format_prefix4jev,
-    SYSTEM_PROMPT,
-    ASSISTANT_PREFILL
-)
-from src.config import (
-    Document,
-    Passage
-)
+from src.utils import load_tokenizer
+from src.prompts import SYSTEM_PROMPT
 
 logger = logging.getLogger(__file__)
 
