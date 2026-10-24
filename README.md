@@ -24,8 +24,6 @@ www27/
 └── third_party/Math-Verify/   # 从生成文本里抽取 \boxed{} 答案
 ```
 
-评测脚本通过 `from src.workers import ...` 使用这些类。
-
 评测入口：
 
 | 脚本 | 作用 | 启动 |
