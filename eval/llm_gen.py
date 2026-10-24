@@ -23,9 +23,9 @@ from src.utils import (
     load_benchmark,
     parse_generation
 )
-from src.worker import (
+from src.workers import (
     VLLMGenerator,
-    APIGenerator
+    APIGenerator,
 )
 
 

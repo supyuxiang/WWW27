@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from abc import ABC, abstractmethod
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-ROOT = Path(__file__).parents[1].resolve()
+ROOT = Path(__file__).parents[2].resolve()
 sys.path.insert(0,str(ROOT))
 
 from src.config import Passage
@@ -23,6 +24,19 @@ _PREFIX = (
 _SUFFIX = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
 
 
+
+
+class RerankerBase(ABC):
+
+    @abstractmethod
+    def score(self):
+        pass
+
+    @abstractmethod
+    def rerank(self):
+        pass
+
+
 def _pair(query: str, passage: Passage) -> str:
     document = passage.text.strip()
     if passage.title:
@@ -34,7 +48,7 @@ def _pair(query: str, passage: Passage) -> str:
     )
 
 
-class Qwen3Reranker:
+class Qwen3Reranker(RerankerBase):
     def __init__(self, model_path: str, batch_size: int = 16, max_length: int = 2048):
         self.batch_size = batch_size
         self.max_length = max_length
@@ -65,36 +79,37 @@ class Qwen3Reranker:
         self.model.eval()
 
     def _score_batch(
-            self,
-            query: str,
-            passages: list[Passage]
-        ) -> list[float]:
-            room = self.max_length - len(self.prefix_tokens) - len(self.suffix_tokens)
-            encoded = self.tokenizer(
-                [_pair(query, passage) for passage in passages],
-                padding=False,
-                truncation=True,
-                max_length=max(room,8),
-                add_special_tokens=False,
-                return_attention_mask=False
-            )
-            for idx, token_ids in enumerate(encoded['input_ids']):
-                encoded['input_ids'][idx] = self.prefix_tokens + list(token_ids) + self.suffix_tokens
-            batch = self.tokenizer.pad(
-                encoded,
-                padding=True,
-                return_tensors='pt'
-            )
-            batch = {k:v.to(self.device) for k,v in batch.items()}
-            with torch.inference_mode():
-                # logits: bsz, seq_len, vocab_size
-                logits = self.model(**batch).logits[:, -1, :] # bsz, vocab_size
-            true = logits[:, self.true_id] # bsz,
-            false = logits[:, self.false_id] # bsz,
-            probs = torch.softmax(
-                torch.stack([false, true], dim=1).float(), dim=1
-            )[:,1] # bsz,
-            return [float(item) for item in probs] # len=bsz
+        self,
+        query: str,
+        passages: list[Passage]
+    ) -> list[float]:
+        room = self.max_length - len(self.prefix_tokens) - len(self.suffix_tokens)
+        encoded = self.tokenizer(
+            [_pair(query, passage) for passage in passages],
+            padding=False,
+            truncation=True,
+            max_length=max(room,8),
+            add_special_tokens=False,
+            return_attention_mask=False
+        )
+        for idx, token_ids in enumerate(encoded['input_ids']):
+            encoded['input_ids'][idx] = self.prefix_tokens + list(token_ids) + self.suffix_tokens
+            
+        batch = self.tokenizer.pad(
+            encoded,
+            padding=True,
+            return_tensors='pt'
+        )
+        batch = {k:v.to(self.device) for k,v in batch.items()}
+        with torch.inference_mode():
+            # logits: bsz, seq_len, vocab_size
+            logits = self.model(**batch).logits[:, -1, :] # bsz, vocab_size
+        true = logits[:, self.true_id] # bsz,
+        false = logits[:, self.false_id] # bsz,
+        probs = torch.softmax(
+            torch.stack([false, true], dim=1).float(), dim=1
+        )[:,1] # bsz,
+        return [float(item) for item in probs] # len=bsz
 
     
     def score(

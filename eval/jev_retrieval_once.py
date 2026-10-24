@@ -10,10 +10,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.worker import LLM_as_Jev
 from src.prompts import prompt4what_choice
-from src.retrieval import BM25Retriever
-from src.retrieval_sqlite import SQLiteBM25Retriever
+from src.workers import (
+    BM25Retriever,
+    LLM_as_Jev,
+    SQLiteBM25Retriever,
+)
 from src.config import Document
 from src.utils import (
     Benchmark,

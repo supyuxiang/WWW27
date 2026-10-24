@@ -13,7 +13,7 @@ from tqdm import tqdm
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.worker import (
+from src.workers import (
     LLM_as_Jev,
     API_Jev,
 )

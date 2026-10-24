@@ -13,16 +13,18 @@ sys.path.insert(0, str(ROOT))
 
 from src.aspects import ASPECTS, ASPECT_BY_NAME
 from src.config import Document, Passage, WWW27Config
-from src.worker import LLM_as_Jev
 from src.prompts import (
     construct_text4rerankng,
     prompt4aspect_check,
     prompt4what_choice,
     prompt4whether_retrieval,
 )
-from src.rerank import Qwen3Reranker
-from src.retrieval import BM25Retriever
-from src.retrieval_sqlite import SQLiteBM25Retriever
+from src.workers import (
+    BM25Retriever,
+    LLM_as_Jev,
+    Qwen3Reranker,
+    SQLiteBM25Retriever,
+)
 from src.utils import (
     Benchmark,
     clip,
