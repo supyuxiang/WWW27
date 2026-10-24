@@ -19,7 +19,6 @@ from src.workers import (
 )
 from src.prompts import (
     prompt4jev_judge,
-    SYSTEM_PROMPT,
     build_few_shot,
 )
 from src.utils import (
@@ -44,8 +43,6 @@ def run_one(
     jev: LLM_as_Jev | API_Jev,
     few_shot: str,
     output_dir: Path,
-    batch_size: int = 4,
-    max_sequences: int = 8,
     model_path: str = "",
 ) -> dict[str, Any]:
     name = bench.name
@@ -63,7 +60,6 @@ def run_one(
     if not prompts:
         raise ValueError(f"{name}: no examples")
 
-    user_prompts = [prompt[1] for prompt in prompts]
     options = prompts[0][-1]
     if any(prompt[-1] != options for prompt in prompts):
         raise ValueError(f"{name}: options differ across prompts")
@@ -77,39 +73,31 @@ def run_one(
     trajectory_path = output_dir / f"jev_only_{name}.jsonl"
     started = time.perf_counter()
     with trajectory_path.open("w", encoding="utf-8") as handle:
-        for idx in tqdm(range(0, len(user_prompts), batch_size), desc=name):
-            batch_examples = examples[idx: idx + batch_size]
-            batch = user_prompts[idx: idx + batch_size]
-            batch_out = jev.score_batch(
-                SYSTEM_PROMPT,
-                batch,
-                options,
-                max_sequences=max_sequences,
-            )
-            if len(batch_out) != len(batch):
-                raise RuntimeError(
-                    f"{name}: score_batch returned {len(batch_out)} rows "
-                    f"for {len(batch)} prompts"
-                )
-            for item, scored in zip(batch_examples, batch_out):
-                best_idx = int(scored["best_idx"])
-                prediction = labels[best_idx]
-                probs = _as_floats(scored["probs"])
-                scores = _as_floats(scored["scores"])
-                gold.append(item["label"])
-                pred.append(prediction)
-                handle.write(json.dumps({
-                    "benchmark": name,
-                    "id": item.get("id"),
-                    "claim": item["claim"],
-                    "gold": item["label"],
-                    "evidence": item["evidence"],
-                    "prediction": prediction,
-                    "judge_probs": {
-                        label: probs[i] for i, label in enumerate(labels)
-                    },
-                    "scores": scores,
-                }, ensure_ascii=False) + "\n")
+        for item, prompt in tqdm(
+            zip(examples, prompts),
+            total=len(examples),
+            desc=name,
+        ):
+            system_prompt, user_prompt, prompt_options = prompt
+            scored = jev.score_options(system_prompt, user_prompt, prompt_options)
+            best_idx = int(scored["best_idx"])
+            prediction = labels[best_idx]
+            probs = _as_floats(scored["probs"])
+            scores = _as_floats(scored["scores"])
+            gold.append(item["label"])
+            pred.append(prediction)
+            handle.write(json.dumps({
+                "benchmark": name,
+                "id": item.get("id"),
+                "claim": item["claim"],
+                "gold": item["label"],
+                "evidence": item["evidence"],
+                "prediction": prediction,
+                "judge_probs": {
+                    label: probs[i] for i, label in enumerate(labels)
+                },
+                "scores": scores,
+            }, ensure_ascii=False) + "\n")
             handle.flush()
 
     summary = {
@@ -144,14 +132,7 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=-1, help="<=0 means the full split")
     parser.add_argument("--output_dir", default="")
     parser.add_argument("--fs_limit", type=int, default=0)
-    parser.add_argument("--batch_size", type=int, default=4)
-    parser.add_argument("--max_sequences", type=int, default=8)
     args = parser.parse_args()
-
-    if args.batch_size <= 0:
-        raise ValueError(f"batch_size must be positive, got {args.batch_size}")
-    if args.max_sequences <= 0:
-        raise ValueError(f"max_sequences must be positive, got {args.max_sequences}")
 
     model_name = Path(args.model_path).name
     output_dir = (
@@ -181,8 +162,6 @@ def main() -> None:
             jev=jev,
             few_shot=few_shot,
             output_dir=output_dir,
-            batch_size=args.batch_size,
-            max_sequences=args.max_sequences,
             model_path=args.model_path,
         )
 
