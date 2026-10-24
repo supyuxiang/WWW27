@@ -9,10 +9,13 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
+# vLLM defaults to fork. CUDA is already initialized by the time the engine
+# starts, and a forked child cannot initialize it again.
+os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
+os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")
 
 import torch
 from vllm import LLM, SamplingParams
-os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")
 from openai import OpenAI
 
 ROOT = Path(__file__).parents[2].resolve()
@@ -37,7 +40,7 @@ class VLLMGenerator(GeneratorBase):
     def __init__(
         self,
         model_path: str,
-        tensor_parallel_size: int = torch.cuda.device_count(),
+        tensor_parallel_size: int = 1,
         gpu_memory_utilization: float = 0.92,
         max_model_len: int = 8192,
         max_tokens: int = 1024,

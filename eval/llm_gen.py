@@ -193,6 +193,13 @@ def main() -> None:
     )
     print("wrote", output_dir, flush=True)
 
+    import gc
+    import torch
+    
+    del generator
+    gc.collect()
+    torch.cuda.empty_cache()
+
 
 if __name__ == "__main__":
     main()
