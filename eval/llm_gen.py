@@ -27,6 +27,41 @@ from src.workers import (
 )
 
 
+def per_class_scores(
+    gold: list[str],
+    pred: list[str],
+    labels: list[str],
+) -> dict[str, dict[str, float]]:
+    """Precision, recall, and F1 for each official label.
+
+    Predictions outside ``labels`` (such as ``invalid``) count as false
+    negatives for the gold label and are not a class of their own.
+    """
+    scores: dict[str, dict[str, float]] = {}
+    for label in labels:
+        tp = fp = fn = 0
+        for truth, guess in zip(gold, pred):
+            if guess == label and truth == label:
+                tp += 1
+            elif guess == label and truth != label:
+                fp += 1
+            elif truth == label and guess != label:
+                fn += 1
+        precision = tp / (tp + fp) if tp + fp else 0.0
+        recall = tp / (tp + fn) if tp + fn else 0.0
+        f1 = (
+            2 * precision * recall / (precision + recall)
+            if precision + recall
+            else 0.0
+        )
+        scores[label] = {
+            "precision": precision,
+            "recall": recall,
+            "f1": f1,
+        }
+    return scores
+
+
 def run_one(
     examples: list[dict],
     bench: Benchmark,
@@ -72,12 +107,14 @@ def run_one(
                 "prediction": prediction,
             }, ensure_ascii=False) + "\n")
 
+    class_scores = per_class_scores(gold, pred, labels)
     summary = {
         "benchmark": name,
         "n": len(gold),
         "invalid": invalid,
         "accuracy": compute_accuracy(gold, pred),
-        "f1": compute_f1(gold, pred, bench),
+        "macro_f1": compute_f1(gold, pred, bench),
+        "per_class": class_scores,
         "gold_counts": dict(Counter(gold)),
         "prediction_counts": dict(Counter(pred)),
         "few_shot": few_shot,
@@ -159,14 +196,27 @@ def main() -> None:
     lines = [
         "# LLM generation with gold evidence",
         "",
-        "| Benchmark | n | Accuracy | F1 | Invalid |",
+        "| Benchmark | n | Accuracy | Macro-F1 | Invalid |",
         "|---|---:|---:|---:|---:|",
     ]
     for name, summary in summaries.items():
         lines.append(
             f"| {name} | {summary['n']} | {summary['accuracy']:.4f} | "
-            f"{summary['f1']:.4f} | {summary['invalid']} |"
+            f"{summary['macro_f1']:.4f} | {summary['invalid']} |"
         )
+    for name, summary in summaries.items():
+        lines.extend([
+            "",
+            f"## {name}",
+            "",
+            "| Label | Precision | Recall | F1 |",
+            "|---|---:|---:|---:|",
+        ])
+        for label, metrics in summary["per_class"].items():
+            lines.append(
+                f"| {label} | {metrics['precision']:.4f} | "
+                f"{metrics['recall']:.4f} | {metrics['f1']:.4f} |"
+            )
     (output_dir / "llm_gen_only_summary.md").write_text(
         "\n".join(lines) + "\n",
         encoding="utf-8",
