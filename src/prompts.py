@@ -31,7 +31,9 @@ WHAT_ASPECT = {
 WHICH_CHOICE = {
     bench.name: bench.choice_dict for bench in BENCHMARKS
 }
-
+RERANK_INSTRUCTION =  (
+    "Retrieve passages that contain evidence relevant to verifying the claim."
+)
 #######################    RQ1     ###########################
 
 # format single few-shot example

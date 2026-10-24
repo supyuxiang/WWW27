@@ -23,8 +23,9 @@ _PREFIX = (
 )
 _SUFFIX = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
 
-
-
+RERANK_INSTRUCTION =  (
+    "Retrieve passages that contain evidence relevant to verifying the claim."
+)
 
 class RerankerBase(ABC):
 

@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from src.config import Passage
-from src.prompts import build_few_shot, prompt4jev_judge
+from src.prompts import build_few_shot, prompt4jev_judge, RERANK_INSTRUCTION
 from src.utils import (
     Benchmark,
     compute_accuracy,
@@ -32,16 +32,11 @@ from src.workers import (
 )
 
 INDEX_ROOT = Path("/root/autodl-tmp/www27/index")
-DEFAULT_MODEL = "/root/autodl-tmp/models/Qwen3-8B"
-DEFAULT_RERANKER = "/root/autodl-tmp/models/Qwen3-Reranker-4B"
 DEFAULT_OUTPUT_DIR = "/root/autodl-tmp/www27/results/jev_retrieval_once"
 SQLITE_INDEXES = {
     "fever": INDEX_ROOT / "fever_fts.sqlite",
     "averitec": INDEX_ROOT / "averitec_dev_fts.sqlite",
 }
-RERANK_INSTRUCTION = (
-    "Retrieve passages that contain evidence relevant to verifying the claim."
-)
 
 
 def _as_floats(value: Any) -> list[float]:
@@ -233,8 +228,8 @@ def main() -> None:
         nargs="+",
         default=["averitec", "fever", "scifact", "healthver"],
     )
-    parser.add_argument("--model", default=DEFAULT_MODEL)
-    parser.add_argument("--reranker", default=DEFAULT_RERANKER)
+    parser.add_argument("--model", default="/root/autodl-tmp/models/Qwen3-8B")
+    parser.add_argument("--reranker", default="/root/autodl-tmp/models/Qwen3-Reranker-4B")
     parser.add_argument("--limit", type=int, default=-1, help="<=0 means the full split")
     parser.add_argument("--output-dir", default="")
     parser.add_argument("--fs_limit", type=int, default=0)
