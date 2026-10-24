@@ -11,10 +11,9 @@ ROOT = Path(__file__).parents[2].resolve()
 sys.path.insert(0,str(ROOT))
 
 from src.config import Passage
+from src.aspects import Aspect
+from src.utils import load_tokenizer
 
-_INSTRUCTION = (
-    "Retrieve passages that contain evidence about the specified aspect of the claim."
-)
 _PREFIX = (
     "<|im_start|>system\n"
     "Judge whether the Document meets the requirements based on the Query and the "
@@ -23,9 +22,53 @@ _PREFIX = (
 )
 _SUFFIX = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
 
-RERANK_INSTRUCTION =  (
+
+
+_INSTRUCTION_WITH_ASPECT = (
+    "Retrieve passages that contain evidence about the {aspect_name} aspect of the claim."
+)
+_INSTRUCTION_WITHOUT_ASPECT =  (
     "Retrieve passages that contain evidence relevant to verifying the claim."
 )
+# construct reranking prompt for reranking without ant aspect information
+# 格式符合Qwen-Reranker-4B的官方要求, 详情见: https://huggingface.co/Qwen/Qwen3-Reranker-4B
+def construct_prompt4reranking_without_aspect(
+    claim: str,
+    passage: Passage,
+    instruction: str = _INSTRUCTION_WITHOUT_ASPECT
+) -> str:
+    query = f'{claim}'
+    document = passage.text.strip()
+    if passage.title:
+        document = f"{passage.title}\n{document}"
+    return (
+        f"<Instruct>: {instruction}\n"
+        f"<Query>: {query}\n"
+        f"<Document>: {document}"
+    )
+
+
+# for reranker, reranking with aspect information
+# 格式符合Qwen-Reranker-4B的官方要求, 详情见: https://huggingface.co/Qwen/Qwen3-Reranker-4B
+def construct_prompt4reranking_with_aspect(
+    claim: str,
+    passage: Passage,
+    aspect: Aspect,
+    instruction: str = _INSTRUCTION_WITH_ASPECT,
+) -> str:
+    instruction = instruction.replace('{aspect_name}',aspect.name)
+    query = f'{claim}'
+    document = passage.text.strip()
+    if passage.title:
+        document = f"{passage.title}\n{document}"
+    return (
+        f"<Instruct>: {instruction}\n"
+        f"<Query>: {query}\n"
+        f"<Document>: {document}"
+    )
+
+
+
 
 class RerankerBase(ABC):
 
@@ -38,37 +81,19 @@ class RerankerBase(ABC):
         pass
 
 
-def _pair(query: str, passage: Passage, instruction: str = _INSTRUCTION) -> str:
-    document = passage.text.strip()
-    if passage.title:
-        document = f"{passage.title}\n{document}"
-    return (
-        f"<Instruct>: {instruction}\n"
-        f"<Query>: {query}\n"
-        f"<Document>: {document}"
-    )
-
-
 class Qwen3Reranker(RerankerBase):
     def __init__(
         self,
-        model_path: str,
+        model_path: str = '/root/autodl-tmp/models/Qwen3-Reranker-4B',
         batch_size: int = 16,
         max_length: int = 2048,
-        instruction: str = _INSTRUCTION,
     ):
         self.batch_size = batch_size
         self.max_length = max_length
-        self.instruction = instruction
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         if self.device.type == 'cpu': print('using cpu!!!')
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            model_path,
-            padding_side="left",
-            trust_remote_code=True,
-        )
-        if self.tokenizer.pad_token_id is None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
+
+        self.tokenizer = load_tokenizer(model_path)
 
         self.prefix_tokens: list[int] = self.tokenizer.encode(_PREFIX, add_special_tokens=False)
         self.suffix_tokens: list[int] = self.tokenizer.encode(_SUFFIX, add_special_tokens=False)
@@ -77,6 +102,7 @@ class Qwen3Reranker(RerankerBase):
         unk: int | None = getattr(self.tokenizer, "unk_token_id", None)
         if self.true_id is None or self.false_id is None or self.true_id == unk or self.false_id == unk:
             raise ValueError(f"{model_path} tokenizer has no single yes/no tokens")
+        
         self.model = AutoModelForCausalLM.from_pretrained(
             model_path,
             dtype=torch.bfloat16,
@@ -86,17 +112,45 @@ class Qwen3Reranker(RerankerBase):
         self.model.to(self.device)
         self.model.eval()
 
+    def _construct_prompt4reranking(
+        self,
+        claim: str,
+        passage: Passage,
+        aspect: Aspect | None = None,
+    ) -> str:
+        assert claim and passage
+
+        if aspect is not None and isinstance(aspect, Aspect):
+            prompt = construct_prompt4reranking_with_aspect(
+                claim=claim,
+                passage=passage,
+                aspect=aspect
+            )
+
+        prompt = construct_prompt4reranking_without_aspect(
+            claim=claim,
+            passage=passage
+        )
+        return prompt
+
+
+    # 格式符合Qwen-Reranker-4B的官方要求, 详情见: https://huggingface.co/Qwen/Qwen3-Reranker-4B
     def _score_batch(
         self,
-        query: str,
-        passages: list[Passage]
+        claim: str,
+        passages: list[Passage],
+        aspect: Aspect | None = None
     ) -> list[float]:
         room = self.max_length - len(self.prefix_tokens) - len(self.suffix_tokens)
+        prompt_ls = [
+            self._construct_prompt4reranking(claim=claim, passage=passage, aspect=aspect)
+            for passage in passages
+        ]
         encoded = self.tokenizer(
-            [_pair(query, passage, self.instruction) for passage in passages],
+            prompt_ls,
             padding=False,
             truncation=True,
-            max_length=max(room,8),
+            max_length=max(room, 8),
             add_special_tokens=False,
             return_attention_mask=False
         )
