@@ -34,6 +34,7 @@ def run_one(
     generator: VLLMGenerator | APIGenerator,
     few_shot: str,
     output_dir: Path,
+    is_cot: bool = False
 ) -> dict[str,Any]:
     name = bench.name
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -45,6 +46,7 @@ def run_one(
             claim=item["claim"],
             few_shot=few_shot,
             evidence=item["evidence"],
+            is_cot=is_cot
         )
         for item in examples
     ]
@@ -111,6 +113,7 @@ def main() -> None:
         action=argparse.BooleanOptionalAction,
         default=False,
     )
+    parser.add_argument('--is_cot', action='store_true')
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
@@ -153,6 +156,7 @@ def main() -> None:
             generator=generator,
             few_shot=few_shot,
             output_dir=output_dir,
+            is_cot=args.is_cot
         )
 
     (output_dir / "llm_gen_only_summary.json").write_text(

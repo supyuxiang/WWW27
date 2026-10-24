@@ -150,6 +150,7 @@ def prompt4llm_judge(
     claim: str,
     few_shot: str | None = None,
     evidence: str | None = None,
+    is_cot: bool = False,
 ) -> tuple[str, str, list[str]]:
     system_prompt = SYSTEM_PROMPT
     options = [f'{i+1}' for i in range(len(benchmark_cls.choice_dict))]
@@ -176,6 +177,10 @@ def prompt4llm_judge(
         )
 
     lines.append('\n')
+    if is_cot: 
+        lines.append(
+            'Let\' think step by step.'
+        )
     lines.append(
         'Put your final answer in \\boxed{VERDICT}, '
         'where VERDICT is exactly one of: ' + ', '.join(labels) + '.'
