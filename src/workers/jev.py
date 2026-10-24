@@ -404,19 +404,19 @@ def main():
     
     breakpoint()
 
-    print("\n" + "=" * 50)
-    print("Test 2: score_batch (multiple prompts)")
-    batch_prompts = [
-        '新闻：地球是平的。\n这个新闻是对的吗？给出你的选择: [1]True,[2]False',
-        '新闻：水在100摄氏度沸腾。\n这个新闻是对的吗？给出你的选择: [1]True,[2]False',
-    ]
-    batch_results = model.score_batch(system_prompt, batch_prompts, options, max_sequences=4)
-    for i, res in enumerate(batch_results):
-        print(f"\nPrompt {i}: {batch_prompts[i][:30]}...")
-        print(f"  Scores: {res['scores'].tolist()}")
-        print(f"  Probs:  {res['probs'].tolist()}")
-        print(f"  Best index: {res['best_idx']} -> '{options[res['best_idx']]}'")
-    breakpoint()
+    # print("\n" + "=" * 50)
+    # print("Test 2: score_batch (multiple prompts)")
+    # batch_prompts = [
+    #     '新闻：地球是平的。\n这个新闻是对的吗？给出你的选择: [1]True,[2]False',
+    #     '新闻：水在100摄氏度沸腾。\n这个新闻是对的吗？给出你的选择: [1]True,[2]False',
+    # ]
+    # batch_results = model.score_batch(system_prompt, batch_prompts, options, max_sequences=4)
+    # for i, res in enumerate(batch_results):
+    #     print(f"\nPrompt {i}: {batch_prompts[i][:30]}...")
+    #     print(f"  Scores: {res['scores'].tolist()}")
+    #     print(f"  Probs:  {res['probs'].tolist()}")
+    #     print(f"  Best index: {res['best_idx']} -> '{options[res['best_idx']]}'")
+    # breakpoint()
 
 
 if __name__ == '__main__':
