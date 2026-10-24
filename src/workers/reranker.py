@@ -23,13 +23,13 @@ _PREFIX = (
 _SUFFIX = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
 
 
-
 _INSTRUCTION_WITH_ASPECT = (
     "Retrieve passages that contain evidence about the {aspect_name} aspect of the claim."
 )
 _INSTRUCTION_WITHOUT_ASPECT =  (
     "Retrieve passages that contain evidence relevant to verifying the claim."
 )
+
 # construct reranking prompt for reranking without ant aspect information
 # 格式符合Qwen-Reranker-4B的官方要求, 详情见: https://huggingface.co/Qwen/Qwen3-Reranker-4B
 def construct_prompt4reranking_without_aspect(
