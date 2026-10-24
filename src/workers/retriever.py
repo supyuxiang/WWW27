@@ -71,7 +71,7 @@ class BM25Retriever(RetrieverBase):
             f"{document.title}\n{document.text}" if document.title else document.text
             for document in self.documents
         ]
-        total = len(texts); assert total
+        total = len(texts)
         
         for start in range(0, total, RETRIEVER_ENCODE_BATCH_SIZE):
             batch = texts[start : start + RETRIEVER_ENCODE_BATCH_SIZE]
