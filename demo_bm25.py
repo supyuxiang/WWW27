@@ -38,6 +38,8 @@ def main() -> None:
     doc_vectors = list(model.embed(documents))
     query_vector = list(model.query_embed(query))[0]
 
+    breakpoint()
+    
     ranked = sorted(
         zip(documents, doc_vectors),
         key=lambda item: sparse_dot(query_vector, item[1]),
