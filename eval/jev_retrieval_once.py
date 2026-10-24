@@ -169,6 +169,7 @@ def run_one(
             except Exception as exc:
                 error = f"{type(exc).__name__}: {exc}"
                 n_errors += 1
+                
             handle.write(json.dumps({
                 "benchmark": name,
                 "id": example.get("id"),
