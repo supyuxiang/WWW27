@@ -126,7 +126,6 @@ def _read_jsonl(path: str | Path):
             if line:
                 yield json.loads(line)
 
-
 def load_benchmark(
     benchmark_name: str,
     limit: int = -1,
@@ -144,10 +143,7 @@ def load_benchmark(
 
         if split == 'train':
             path = bench.train_path
-            if path is None:
-                raise FileNotFoundError(
-                    f'{benchmark_name} has no normalized training split'
-                )
+            
         elif split in ('dev', 'test'):
             path = bench.path
         else:
