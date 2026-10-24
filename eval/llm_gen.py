@@ -109,7 +109,7 @@ def main() -> None:
     parser.add_argument("--fs_limit", type=int, default=0)
     parser.add_argument("--generator", choices=["vllm", "api"], default="vllm")
     parser.add_argument(
-        "--enable-thinking",
+        "--enable_thinking",
         action=argparse.BooleanOptionalAction,
         default=False,
     )

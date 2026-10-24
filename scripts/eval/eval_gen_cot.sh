@@ -31,12 +31,18 @@ for num_tokens in "${TOKENS[@]}"; do
         echo "开始运行模型: $MODEL (max_tokens=$num_tokens)"
         echo "========================================"
 
+        THINKING_ARGS=()
+        if [[ "$MODEL" == *Qwen3* ]]; then
+            THINKING_ARGS+=(--enable_thinking)
+        fi
+
         /root/autodl-tmp/miniconda3/envs/www27/bin/python /root/yxfeng/www27/eval/llm_gen.py \
             --model "$MODEL" \
             --limit $LIMIT \
             --max_tokens "$num_tokens" \
             --output_dir "/root/autodl-tmp/www27/llm_gen_only_cot/tokens${num_tokens}/$(basename "$MODEL")" \
-            --is_cot
+            --is_cot \
+            "${THINKING_ARGS[@]}"
     done
 done
 
