@@ -75,16 +75,18 @@ def build_few_shot(
 
     num_per_label = limit // required
 
+    # load benchmark
     def _load(preferred_split: str) -> list[dict]:
         rows, _ = load_benchmark(
             benchmark_name=bench_cls.name,
             limit=-1,
             split=preferred_split,
         )
-        return [ row for row in rows if row['label'] in labels]
+        return [row for row in rows if row['label'] in labels]
 
     pool = _load(split)
-    
+
+    # checking missing
     missing = [label for label in labels if not any(
         row.get('label') == label for row in pool
     )]
@@ -335,14 +337,6 @@ def prompt4jev_what_aspect(
     user_prompt = '\n'.join(lines)
     return system_prompt, user_prompt, options
 
-
-def construct_text4rerankng(claim: str, aspect: Aspect) -> str:
-    """Rerank query."""
-    return (
-        f"Aspect: {aspect.name}\n"
-        f"Definition: {aspect.definition}\n"
-        f"Claim: {claim}"
-    )
 
 
 
