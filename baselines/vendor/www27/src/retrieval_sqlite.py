@@ -1,4 +1,4 @@
-"""Disk-backed BM25 retrieval over SQLite FTS5 indexes."""
+'''Disk-backed BM25 retrieval over SQLite FTS5 indexes.'''
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from src.utils.text import STOPWORDS, best_passage, tokenize
 
 
 class SQLiteBM25Retriever:
-    """Use the same search contract as the in-memory BM25 retriever."""
+    '''Use the same search contract as the in-memory BM25 retriever.'''
 
     def __init__(
         self,
@@ -21,7 +21,7 @@ class SQLiteBM25Retriever:
     ):
         self.db_path = str(db_path)
         self.conn = sqlite3.connect(
-            f"file:{self.db_path}?mode=ro", uri=True, check_same_thread=False
+            f'file:{self.db_path}?mode=ro', uri=True, check_same_thread=False
         )
         self.claim_scoped = claim_scoped
         self.current_claim: str | None = None
@@ -29,7 +29,7 @@ class SQLiteBM25Retriever:
     def set_claim(self, claim_id: str) -> None:
         if self.claim_scoped:
             value = str(claim_id)
-            match = re.fullmatch(r"row-(\d+)", value)
+            match = re.fullmatch(r'row-(\\d+)', value)
             self.current_claim = match.group(1) if match else value
 
     @staticmethod
@@ -39,10 +39,10 @@ class SQLiteBM25Retriever:
             terms = tokenize(query)
         safe = []
         for term in terms:
-            term = term.replace('"', "")
+            term = term.replace('"', '')
             if term:
                 safe.append(f'"{term}"')
-        return " OR ".join(safe)
+        return ' OR '.join(safe)
 
     def search(
         self,
@@ -73,16 +73,16 @@ class SQLiteBM25Retriever:
         if not fts_query:
             return []
         params: list[object] = [fts_query]
-        where = "docs MATCH ?"
+        where = 'docs MATCH ?'
         if self.claim_scoped:
             if claim_id is None:
-                raise RuntimeError("claim-scoped retriever used before set_claim()")
-            where += " AND claim_id = ?"
+                raise RuntimeError('claim-scoped retriever used before set_claim()')
+            where += ' AND claim_id = ?'
             params.append(claim_id)
         params.append(max(k * 3, k))
         rows = connection.execute(
-            "SELECT doc_id, title, text, bm25(docs) AS score "
-            f"FROM docs WHERE {where} ORDER BY bm25(docs) LIMIT ?",
+            'SELECT doc_id, title, text, bm25(docs) AS score '
+            f'FROM docs WHERE {where} ORDER BY bm25(docs) LIMIT ?',
             params,
         ).fetchall()
         blocked = exclude_ids or set()
@@ -99,7 +99,7 @@ class SQLiteBM25Retriever:
                     doc_id=doc_id,
                     text=snippet,
                     score=float(-score),
-                    title=str(title or ""),
+                    title=str(title or ''),
                 )
             )
             if len(passages) >= k:
@@ -113,7 +113,7 @@ class SQLiteBM25Retriever:
         exclude_ids: set[str] | None = None,
         max_passage_chars: int = 800,
     ) -> list[list[Passage]]:
-        """Search independent queries concurrently using read-only connections."""
+        '''Search independent queries concurrently using read-only connections.'''
         if len(queries) <= 1:
             return [
                 self.search(query, k, exclude_ids, max_passage_chars)
@@ -123,7 +123,7 @@ class SQLiteBM25Retriever:
 
         def worker(query: str) -> list[Passage]:
             connection = sqlite3.connect(
-                f"file:{self.db_path}?mode=ro", uri=True, check_same_thread=False
+                f'file:{self.db_path}?mode=ro', uri=True, check_same_thread=False
             )
             try:
                 return self._search_with_connection(

@@ -1,1 +1,1 @@
-"""Shared, model-independent helpers for JARV."""
+'''Shared, model-independent helpers for JARV.'''

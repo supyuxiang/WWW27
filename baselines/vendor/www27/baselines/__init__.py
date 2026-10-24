@@ -1,1 +1,1 @@
-"""Frozen baseline dependency modules used by the reproduction entry points."""
+'''Frozen baseline dependency modules used by the reproduction entry points.'''

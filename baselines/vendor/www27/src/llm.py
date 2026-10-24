@@ -1,4 +1,4 @@
-"""Local causal LM wrapper. Scoring implements LLM-as-Jev suffix likelihoods."""
+'''Local causal LM wrapper. Scoring implements LLM-as-Jev suffix likelihoods.'''
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from src.prompts import ASSISTANT_PREFILL
 from src.utils.text import softmax
 from src.types import Choice, Generation, Option, Usage
 
-logger = logging.getLogger("src.llm")
+logger = logging.getLogger('src.llm')
 
 
 def render_chat(
@@ -20,16 +20,16 @@ def render_chat(
     enable_thinking: bool = False,
     use_chat_template: bool = True,
 ) -> str:
-    """Render a chat prompt or plain-text prompt for Base models."""
+    '''Render a chat prompt or plain-text prompt for Base models.'''
     if not use_chat_template:
-        text = f"{system}\n\n{user}"
+        text = f'{system}\n\n{user}'
         if prefill:
             text += prefill
         return text
 
     messages = [
-        {"role": "system", "content": system},
-        {"role": "user", "content": user},
+        {'role': 'system', 'content': system},
+        {'role': 'user', 'content': user},
     ]
     try:
         text = tokenizer.apply_chat_template(
@@ -50,7 +50,7 @@ def render_chat(
 
 
 class LocalLLM:
-    """Frozen local model. Candidate decisions do not sample a rationale."""
+    '''Frozen local model. Candidate decisions do not sample a rationale.'''
 
     def __init__(self, model_path: str, use_chat_template: bool = True):
         import torch
@@ -58,9 +58,9 @@ class LocalLLM:
 
         self.torch = torch
         self.use_chat_template = use_chat_template
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.dtype = torch.bfloat16 if self.device.type == "cuda" else torch.float32
-        logger.info("Loading tokenizer and model from %s on %s", model_path, self.device)
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.dtype = torch.bfloat16 if self.device.type == 'cuda' else torch.float32
+        logger.info('Loading tokenizer and model from %s on %s', model_path, self.device)
         self.tokenizer = AutoTokenizer.from_pretrained(model_path, local_files_only=True)
         if self.tokenizer.pad_token_id is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
@@ -68,7 +68,7 @@ class LocalLLM:
             self.model = AutoModelForCausalLM.from_pretrained(
                 model_path,
                 dtype=self.dtype,
-                attn_implementation="sdpa",
+                attn_implementation='sdpa',
                 local_files_only=True,
             )
         except TypeError:
@@ -82,7 +82,7 @@ class LocalLLM:
         self._alignment_warned = False
 
     def encode(self, text: str) -> list[int]:
-        encoded = self.tokenizer(text, add_special_tokens=False)["input_ids"]
+        encoded = self.tokenizer(text, add_special_tokens=False)['input_ids']
         if encoded and isinstance(encoded[0], list):
             encoded = encoded[0]
         return list(encoded)
@@ -106,12 +106,12 @@ class LocalLLM:
             if start != len(prefix_ids):
                 if not self._alignment_warned:
                     logger.warning(
-                        "Suffix tokenization crossed the prompt boundary for %r; scoring the unmatched tail.",
+                        'Suffix tokenization crossed the prompt boundary for %r; scoring the unmatched tail.',
                         option.suffix,
                     )
                     self._alignment_warned = True
             if start >= len(full_ids):
-                raise RuntimeError(f"Candidate suffix {option.suffix!r} produced no tokens")
+                raise RuntimeError(f'Candidate suffix {option.suffix!r} produced no tokens')
             sequences.append(full_ids)
             spans.append((start, len(full_ids)))
         return sequences, spans
@@ -139,7 +139,7 @@ class LocalLLM:
             scores = []
             for row, (start, end) in enumerate(spans):
                 if start <= 0:
-                    raise RuntimeError("Candidate suffix has no conditioning token")
+                    raise RuntimeError('Candidate suffix has no conditioning token')
                 total = None
                 for position in range(start, end):
                     token_id = int(input_ids[row, position].item())
@@ -165,7 +165,7 @@ class LocalLLM:
             probs={option.key: probabilities[index] for index, option in enumerate(options)},
             scores={option.key: values[index] for index, option in enumerate(options)},
             parsed=True,
-            raw_text="",
+            raw_text='',
             usage=usage,
         )
 
@@ -175,9 +175,9 @@ class LocalLLM:
             self.tokenizer, system, user, prefill=None, enable_thinking=False,
             use_chat_template=self.use_chat_template,
         )
-        encoded = self.tokenizer(prefix, return_tensors="pt", add_special_tokens=False)
+        encoded = self.tokenizer(prefix, return_tensors='pt', add_special_tokens=False)
         encoded = {key: value.to(self.device) for key, value in encoded.items()}
-        prompt_len = int(encoded["input_ids"].shape[1])
+        prompt_len = int(encoded['input_ids'].shape[1])
         with torch.inference_mode():
             output = self.model.generate(
                 **encoded,
@@ -197,7 +197,7 @@ class LocalLLM:
     def generate_many(
         self, system: str, users: list[str], max_new_tokens: int
     ) -> list[Generation]:
-        """Greedily generate several independent prompts in one padded batch."""
+        '''Greedily generate several independent prompts in one padded batch.'''
         if not users:
             return []
         torch = self.torch
@@ -213,18 +213,18 @@ class LocalLLM:
             for user in users
         ]
         old_padding_side = self.tokenizer.padding_side
-        self.tokenizer.padding_side = "left"
+        self.tokenizer.padding_side = 'left'
         try:
             encoded = self.tokenizer(
                 prefixes,
-                return_tensors="pt",
+                return_tensors='pt',
                 padding=True,
                 add_special_tokens=False,
             )
         finally:
             self.tokenizer.padding_side = old_padding_side
         encoded = {key: value.to(self.device) for key, value in encoded.items()}
-        prompt_width = int(encoded["input_ids"].shape[1])
+        prompt_width = int(encoded['input_ids'].shape[1])
         with torch.inference_mode():
             output = self.model.generate(
                 **encoded,
@@ -243,7 +243,7 @@ class LocalLLM:
                     text=text,
                     usage=Usage(
                         forward_passes=1,
-                        input_tokens=int(encoded["attention_mask"][row].sum().item()),
+                        input_tokens=int(encoded['attention_mask'][row].sum().item()),
                         output_tokens=len(generated),
                     ),
                 )

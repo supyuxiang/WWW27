@@ -1,8 +1,8 @@
-﻿"""Experiment settings for the JARV retrieval loop.
+﻿'''Experiment settings for the JARV retrieval loop.
 
 Only the training-free JARV loop is implemented. Thresholds are fixed in
 advance and are not fitted on evaluation data.
-"""
+'''
 
 from __future__ import annotations
 
@@ -13,13 +13,13 @@ import yaml
 
 @dataclass
 class JarvConfig:
-    model_path: str = "/root/autodl-tmp/models/Qwen3-8B"
-    data_path: str = "data/sample_claims.jsonl"
-    corpus_path: str = "data/sample_corpus.jsonl"
-    output_path: str = "outputs/predictions.jsonl"
-    method: str = "jarv"
-    claim_mode: str = "stored"
-    domain: str = ""
+    model_path: str = '/root/autodl-tmp/models/Qwen3-8B'
+    data_path: str = 'data/sample_claims.jsonl'
+    corpus_path: str = 'data/sample_corpus.jsonl'
+    output_path: str = 'outputs/predictions.jsonl'
+    method: str = 'jarv'
+    claim_mode: str = 'stored'
+    domain: str = ''
     limit: int = 0
     offset: int = 0
     seed: int = 0
@@ -44,20 +44,20 @@ class JarvConfig:
 
 
 def _coerce_value(key: str, value: object, default: object) -> object:
-    """Validate one YAML value against the type of its dataclass default."""
+    '''Validate one YAML value against the type of its dataclass default.'''
     if isinstance(default, bool):
         if isinstance(value, bool):
             return value
         if isinstance(value, str):
             lowered = value.strip().lower()
-            if lowered in {"true", "yes", "1"}:
+            if lowered in {'true', 'yes', '1'}:
                 return True
-            if lowered in {"false", "no", "0"}:
+            if lowered in {'false', 'no', '0'}:
                 return False
-        raise SystemExit(f"Config key {key!r} must be a boolean, got {value!r}")
+        raise SystemExit(f'Config key {key!r} must be a boolean, got {value!r}')
     if isinstance(default, int):
         if isinstance(value, bool):
-            raise SystemExit(f"Config key {key!r} must be an integer, got {value!r}")
+            raise SystemExit(f'Config key {key!r} must be an integer, got {value!r}')
         if isinstance(value, int):
             return value
         if isinstance(value, float) and value.is_integer():
@@ -67,10 +67,10 @@ def _coerce_value(key: str, value: object, default: object) -> object:
                 return int(value.strip())
             except ValueError:
                 pass
-        raise SystemExit(f"Config key {key!r} must be an integer, got {value!r}")
+        raise SystemExit(f'Config key {key!r} must be an integer, got {value!r}')
     if isinstance(default, float):
         if isinstance(value, bool):
-            raise SystemExit(f"Config key {key!r} must be a number, got {value!r}")
+            raise SystemExit(f'Config key {key!r} must be a number, got {value!r}')
         if isinstance(value, (int, float)):
             return float(value)
         if isinstance(value, str):
@@ -78,10 +78,10 @@ def _coerce_value(key: str, value: object, default: object) -> object:
                 return float(value.strip())
             except ValueError:
                 pass
-        raise SystemExit(f"Config key {key!r} must be a number, got {value!r}")
+        raise SystemExit(f'Config key {key!r} must be a number, got {value!r}')
     if isinstance(default, str):
         if not isinstance(value, str):
-            raise SystemExit(f"Config key {key!r} must be a string, got {value!r}")
+            raise SystemExit(f'Config key {key!r} must be a string, got {value!r}')
         return value
     return value
 
@@ -90,19 +90,19 @@ def load_config(path: str | None) -> JarvConfig:
     config = JarvConfig()
     if not path:
         return config
-    with open(path, "r", encoding="utf-8") as handle:
+    with open(path, 'r', encoding='utf-8') as handle:
         raw = yaml.safe_load(handle)
     if raw is None:
         raw = {}
     if not isinstance(raw, dict):
-        raise SystemExit(f"Config {path} must contain a mapping of keys to values")
+        raise SystemExit(f'Config {path} must contain a mapping of keys to values')
     defaults = {item.name: item.default for item in fields(JarvConfig)}
     unknown = sorted(set(raw) - set(defaults))
     if unknown:
-        raise SystemExit(f"Unknown config keys: {', '.join(unknown)}")
+        raise SystemExit(f'Unknown config keys: {', '.join(unknown)}')
     for key, value in raw.items():
         setattr(config, key, _coerce_value(key, value, defaults[key]))
     return config
 
 
-METHODS = ("jarv",)
+METHODS = ('jarv',)

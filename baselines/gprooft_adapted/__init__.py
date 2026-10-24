@@ -1,1 +1,1 @@
-"""GProofT native-offline adapted reproduction."""
+'''GProofT native-offline adapted reproduction.'''

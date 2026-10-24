@@ -1,4 +1,4 @@
-"""Shared records for claims, retrieval, and model calls."""
+'''Shared records for claims, retrieval, and model calls.'''
 
 from __future__ import annotations
 
@@ -51,10 +51,10 @@ class Cost:
 class Document:
     doc_id: str
     text: str
-    title: str = ""
-    url: str = ""
-    date: str = ""
-    domain: str = ""
+    title: str = ''
+    url: str = ''
+    date: str = ''
+    domain: str = ''
 
 
 @dataclass
@@ -62,12 +62,12 @@ class Passage:
     doc_id: str
     text: str
     score: float
-    title: str = ""
-    url: str = ""
-    date: str = ""
-    query: str = ""
-    sub_claim: str = ""
-    aspect: str = ""
+    title: str = ''
+    url: str = ''
+    date: str = ''
+    query: str = ''
+    sub_claim: str = ''
+    aspect: str = ''
 
 
 @dataclass
@@ -84,9 +84,9 @@ class Example:
     claim: str
     label: str
     domain: str
-    title: str = ""
-    text: str = ""
-    source_id: str = ""
+    title: str = ''
+    text: str = ''
+    source_id: str = ''
     needs_retrieval: bool | None = None
     gold_aspects: list[str] | None = None
 

@@ -1,4 +1,4 @@
-"""Local Okapi BM25 retrieval. No remote search calls."""
+'''Local Okapi BM25 retrieval. No remote search calls.'''
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ class BM25Index:
         self.df: Counter = Counter()
         self.postings: dict[str, list[int]] = defaultdict(list)
         for index, document in enumerate(documents):
-            tokens = tokenize(f"{document.title}\n{document.text}")
+            tokens = tokenize(f'{document.title}\n{document.text}')
             counts = Counter(tokens)
             self.tf.append(counts)
             self.lengths.append(len(tokens) or 1)
