@@ -23,7 +23,7 @@ for MODEL in "${MODELS[@]}"; do
     echo "开始运行模型: $MODEL"
     echo "========================================"
 
-    python /root/yxfeng/www27/eval/jev_retrieval_once.py \
+    /root/autodl-tmp/miniconda3/envs/www27/bin/python /root/yxfeng/www27/eval/jev_retrieval_once.py \
         --model "$MODEL" \
         --limit $LIMIT \
         --output-dir "/root/autodl-tmp/www27/results/jev_retrieval_once/$(basename "$MODEL")"
