@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from src.config import Passage
-from src.prompts import build_few_shot, prompt4jev_judge, RERANK_INSTRUCTION
+from src.prompts import build_few_shot, prompt4jev_judge
 from src.utils import (
     Benchmark,
     compute_accuracy,
@@ -254,7 +254,6 @@ def main() -> None:
     reranker = Qwen3Reranker(
         model_path=args.reranker,
         batch_size=args.rerank_batch_size,
-        instruction=RERANK_INSTRUCTION,
     )
     retriever = ClaimRetriever()
     summaries: dict[str, dict] = {}

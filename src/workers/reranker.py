@@ -177,14 +177,15 @@ class Qwen3Reranker(RerankerBase):
     def score(
         self,
         query: str,
-        passages: list[Passage]
+        passages: list[Passage],
+        aspect: Aspect | None = None,
     ) -> list[float]:
         if not passages:
             return []
         scores: list[float] = []
         for start in range(0, len(passages), self.batch_size):
             chunk = passages[start : start + self.batch_size]
-            scores.extend(self._score_batch(query, chunk))
+            scores.extend(self._score_batch(query, chunk, aspect=aspect))
         return scores
 
 
@@ -192,11 +193,12 @@ class Qwen3Reranker(RerankerBase):
         self,
         query: str,
         passages: list[Passage],
-        top_k:int
+        top_k: int,
+        aspect: Aspect | None = None,
     ) -> list[tuple[Passage, float]]:
         if top_k <= 0 or not passages:
             return []
-        scores: list[float] = self.score(query, passages)
+        scores: list[float] = self.score(query, passages, aspect=aspect)
         order = sorted(
             range(len(passages)),
             key=lambda idx: scores[idx],
