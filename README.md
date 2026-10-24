@@ -2,6 +2,45 @@
 
 ---
 
+## 代码结构
+
+```text
+www27/
+├── src/
+│   ├── workers/          # 模型、检索、重排
+│   ├── prompts.py        # 判定、few-shot、检索门控与 aspect 提示
+│   ├── utils.py          # 数据加载、Accuracy / Macro-F1、答案解析
+│   ├── config.py         # Document、Passage 与实验配置
+│   └── aspects.py        # 事实核查切面定义
+├── eval/                 # 评测入口
+├── scripts/eval/         # 多模型循环脚本
+├── data/preprocess.py    # 把 benchmark 写成统一 jsonl
+├── demo_bm25.py          # fastembed BM25 点积示例
+└── third_party/Math-Verify/  # 从生成文本里抽取 \boxed{} 答案
+```
+
+`src/workers` 是运行时组件，评测脚本通过 `from src.workers import ...` 使用：
+
+| 模块 | 作用 |
+|---|---|
+| `jev.py` | `LLM_as_Jev` 对候选 verdict 打 token log-prob，不逐 token 解码 |
+| `llm_generator.py` | `VLLMGenerator` 走本地 vLLM，`APIGenerator` 走 DeepSeek API |
+| `retriever.py` | `BM25Retriever` 为内存索引，`SQLiteBM25Retriever` 为 FTS5 磁盘索引 |
+| `reranker.py` | `Qwen3Reranker` 按 query 对 passage 打 yes/no 概率 |
+
+评测入口：
+
+| 脚本 | 作用 | 启动 |
+|---|---|---|
+| `eval/jev_only.py` | 金证据上的 JEV 判定 | `scripts/eval/jev_only.sh` |
+| `eval/llm_gen.py` | 金证据上的生成式判定，与 JEV 对比 | `scripts/eval/llm_gen.sh` |
+| `eval/jev_retrieval_once.py` | 先 BM25 检索一次，再用 JEV 判定 | `scripts/eval/jev_retrieval_once.sh` |
+| `eval/eval_main.py` | Doffy 主流程：检索门控、aspect、重排、JEV 判定 | 直接运行该脚本 |
+
+预处理后的 claim 为 `id`、`claim`、`label`、`evidence`，语料为 `doc_id`、`title`、`text`。加载与指标在 `src/utils.py`。
+
+---
+
 ## RQ1：验证 LLM-as-Jev 具有 training-free 的 fact-checking 能力  
 **设计离线检索实验去验证 Jev + Retrieval Once 的能力**
 

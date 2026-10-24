@@ -24,8 +24,9 @@ for MODEL in "${MODELS[@]}"; do
     echo "========================================"
 
     python /root/yxfeng/www27/eval/llm_gen.py \
-        --model_path "$MODEL" \
-        --limit $LIMIT
+        --model "$MODEL" \
+        --limit $LIMIT \
+        --output_dir "/root/autodl-tmp/www27/llm_gen_only/$(basename "$MODEL")"
 done
 
 echo "所有模型运行完毕！"

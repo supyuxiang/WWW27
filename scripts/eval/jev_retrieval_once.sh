@@ -24,8 +24,9 @@ for MODEL in "${MODELS[@]}"; do
     echo "========================================"
 
     python /root/yxfeng/www27/eval/jev_retrieval_once.py \
-        --model_path "$MODEL" \
-        --limit $LIMIT
+        --model "$MODEL" \
+        --limit $LIMIT \
+        --output-dir "/root/autodl-tmp/www27/results/jev_retrieval_once/$(basename "$MODEL")"
 done
 
 echo "所有模型运行完毕！"

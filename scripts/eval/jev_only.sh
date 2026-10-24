@@ -25,7 +25,8 @@ for MODEL in "${MODELS[@]}"; do
 
     python /root/yxfeng/www27/eval/jev_only.py \
         --model_path "$MODEL" \
-        --limit $LIMIT
+        --limit $LIMIT \
+        --output_dir "/root/autodl-tmp/www27/jev_only/$(basename "$MODEL")"
 done
 
 echo "所有模型运行完毕！"

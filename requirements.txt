@@ -1,5 +1,3 @@
-# Runtime for the JARV loop and the fine-tuning framework.
-# The verl1 environment already provides torch/transformers.
 pyyaml>=6
 tqdm>=4
 torch>=2.1
