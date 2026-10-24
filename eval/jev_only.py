@@ -26,6 +26,7 @@ from src.utils import (
     compute_accuracy,
     compute_f1,
     load_benchmark,
+    per_class_scores,
 )
 
 DEFAULT_OUTPUT_DIR = "/root/autodl-tmp/www27/jev_only"
@@ -105,7 +106,8 @@ def run_one(
         "model": model_path,
         "n": len(gold),
         "accuracy": compute_accuracy(gold, pred),
-        "f1": compute_f1(gold, pred, bench),
+        "macro_f1": compute_f1(gold, pred, bench),
+        "per_class": per_class_scores(gold, pred, labels),
         "gold_counts": dict(Counter(gold)),
         "prediction_counts": dict(Counter(pred)),
         "few_shot": few_shot,
@@ -174,14 +176,27 @@ def main() -> None:
         "",
         f"Model: `{args.model_path}`",
         "",
-        "| Benchmark | n | Accuracy | F1 |",
+        "| Benchmark | n | Accuracy | Macro-F1 |",
         "|---|---:|---:|---:|",
     ]
     for name, summary in summaries.items():
         lines.append(
             f"| {name} | {summary['n']} | {summary['accuracy']:.4f} | "
-            f"{summary['f1']:.4f} |"
+            f"{summary['macro_f1']:.4f} |"
         )
+    for name, summary in summaries.items():
+        lines.extend([
+            "",
+            f"## {name}",
+            "",
+            "| Label | Precision | Recall | F1 |",
+            "|---|---:|---:|---:|",
+        ])
+        for label, metrics in summary["per_class"].items():
+            lines.append(
+                f"| {label} | {metrics['precision']:.4f} | "
+                f"{metrics['recall']:.4f} | {metrics['f1']:.4f} |"
+            )
     (output_dir / "jev_only_summary.md").write_text(
         "\n".join(lines) + "\n",
         encoding="utf-8",
