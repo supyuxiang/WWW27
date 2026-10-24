@@ -102,75 +102,16 @@ class LLM_as_Jev(JevBase):
             )
         return sequences, spans
 
-    def _forward_scores(
-        self,
-        sequences: list[torch.Tensor],
-        spans: list[tuple[int, int]],
-        is_training: bool = False,
-    ) -> torch.Tensor:
-        assert sequences and len(sequences) == len(spans), f'{sequences}_{len(sequences)}_{len(spans)}'
-
-        num_sequences = len(sequences)
-        max_len = max(seq.numel() for seq in sequences)
-        pad_id = self.tokenizer.pad_token_id; assert pad_id is not None
-        
-        input_ids = torch.full(
-            (num_sequences, max_len),
-            pad_id,
-            dtype=torch.long,
-            device=self.device
-        )
-        attention_mask = torch.zeros_like(input_ids)
-        option_mask = torch.zeros_like(input_ids, dtype=torch.bool)
-
-        for row, (seq, (start, end)) in enumerate(zip(sequences, spans)):
-            seq = seq.reshape(-1) # (seq_len,)
-            length = seq.numel()
-            assert (0 < start < end <= length)
-
-            input_ids[row, :length] = seq
-            attention_mask[row, :length] = 1
-            option_mask[row, start:end] = True
-
-        if is_training:
-            self.model.train()
-            outputs = self.model(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                use_cache=False,
-                return_dict=True
-            )
-        else:
-            self.model.eval()
-            with torch.inference_mode():
-                outputs = self.model(
-                    input_ids=input_ids,
-                    attention_mask=attention_mask,
-                    use_cache=False,
-                    return_dict=True
+    def _option_token_ids(self, options: list[str]) -> torch.Tensor:
+        token_ids: list[int] = []
+        for option in options:
+            ids = self.tokenizer.encode(option, add_special_tokens=False)
+            if len(ids) != 1:
+                raise ValueError(
+                    f"option {option!r} tokenizes to {len(ids)} tokens, expected 1"
                 )
-                
-        rows, positions = option_mask.nonzero(as_tuple=True)
-
-        selected_logits = outputs.logits[rows, positions - 1].float() # (N, vocab_size), N 是所有被选 token 的总数量
-        targets = input_ids[rows, positions] # (N,), N 是所有被选 token 的总数量
-
-        token_log_probs = -F.cross_entropy(
-            selected_logits,
-            targets,
-            reduction="none", # 不聚合,返回 (N,)
-        )
-
-        # 将每个 token 的 log-prob 累加回所属序列。
-        scores = torch.zeros(
-            num_sequences,
-            dtype=torch.float32,
-            device=self.device,
-        )
-        scores.index_add_(dim=0, index=rows, source=token_log_probs)
-
-        return scores # (num_cpotions,)
-
+            token_ids.append(ids[0])
+        return torch.tensor(token_ids, dtype=torch.long, device=self.device)
 
     def score_options(
         self,
@@ -178,77 +119,29 @@ class LLM_as_Jev(JevBase):
         user_prompt: str,
         options: list[str]
     ) -> dict:
-        sequences, spans = self.get_sequences(system_prompt, user_prompt, options)
-        scores = self._forward_scores(sequences, spans)
-        prob_distribution = F.softmax(scores,dim=-1)
-        best_idx = int(torch.argmax(prob_distribution,dim=-1))
-        out = dict(
-            probs=prob_distribution,
+        if not options:
+            raise ValueError("options must be non-empty")
+        prefix = format_prefix4jev(
+            self.tokenizer,
+            system_prompt,
+            user_prompt,
+            prefill=ASSISTANT_PREFILL,
+        )
+        prefix_ids = self.encode(prefix).to(torch.long).view(1, -1)
+        option_ids = self._option_token_ids(options)
+        with torch.inference_mode():
+            logits = self.model(
+                input_ids=prefix_ids,
+                use_cache=False,
+                return_dict=True,
+            ).logits[:, -1, :].float()
+        scores = F.log_softmax(logits, dim=-1)[0, option_ids]
+        probs = F.softmax(scores, dim=-1)
+        return dict(
+            probs=probs,
             scores=scores,
-            best_idx=best_idx
+            best_idx=int(torch.argmax(probs)),
         )
-        return out
-
-
-    def score_batch(
-        self,
-        system_prompt: str,
-        batch_user_prompt: list[str],
-        options: list[str],
-        max_sequences: int = 8,
-        is_training: bool = False,
-    ) -> list[dict]:
-        """
-        max_sequences: 每次 forward 最多处理多少条 prompt-option 序列。
-        返回顺序与 batch_user_prompt 一致。
-        """
-        assert options and batch_user_prompt and max_sequences > 0
-
-        sequences: list[torch.Tensor] = []
-        spans: list[tuple[int, int]] = []
-
-        # 顺序：
-        # prompt_0 + option_0, prompt_0 + option_1, ...
-        # prompt_1 + option_0, prompt_1 + option_1, ...
-        for user_prompt in batch_user_prompt:
-            seqs, seq_spans = self.get_sequences(
-                system_prompt,
-                user_prompt,
-                options,
-            )
-            sequences.extend(seqs)
-            spans.extend(seq_spans)
-
-        # 分块控制显存；分块边界可以位于同一 prompt 的选项之间。
-        score_chunks = []
-        for start in range(0, len(sequences), max_sequences):
-            end = start + max_sequences
-            chunk_sequences = sequences[start:end]
-            chunk_spans = spans[start:end]
-            chunk_scores = self._forward_scores(
-                chunk_sequences,
-                chunk_spans,
-                is_training=is_training
-            ) # (num_seqs,)
-            score_chunks.append(chunk_scores)
-
-        # [B*K] -> [B, K]
-        scores = torch.cat(score_chunks).reshape(
-            len(batch_user_prompt),
-            len(options),
-        )
-
-        probs = F.softmax(scores, dim=-1) # (B,K)
-        best_indices = scores.argmax(dim=-1).tolist() # list[int]
-
-        return [
-            {
-                "probs": probs[i],
-                "scores": scores[i],
-                "best_idx": best_indices[i],
-            }
-            for i in range(len(batch_user_prompt))
-        ]
 
 
     def decode(self, tokens: list[int]) -> str:
@@ -262,6 +155,140 @@ class LLM_as_Jev(JevBase):
         return sum(
                 [p.numel() for p in self.model.parameters()]
             )
+
+
+
+    # def _forward_scores(
+    #     self,
+    #     sequences: list[torch.Tensor],
+    #     spans: list[tuple[int, int]],
+    #     is_training: bool = False,
+    # ) -> torch.Tensor:
+    #     assert sequences and len(sequences) == len(spans), f'{sequences}_{len(sequences)}_{len(spans)}'
+
+    #     num_sequences = len(sequences)
+    #     max_len = max(seq.numel() for seq in sequences)
+    #     pad_id = self.tokenizer.pad_token_id; assert pad_id is not None
+        
+    #     input_ids = torch.full(
+    #         (num_sequences, max_len),
+    #         pad_id,
+    #         dtype=torch.long,
+    #         device=self.device
+    #     )
+    #     attention_mask = torch.zeros_like(input_ids)
+    #     option_mask = torch.zeros_like(input_ids, dtype=torch.bool)
+
+    #     for row, (seq, (start, end)) in enumerate(zip(sequences, spans)):
+    #         seq = seq.reshape(-1) # (seq_len,)
+    #         length = seq.numel()
+    #         assert (0 < start < end <= length)
+
+    #         input_ids[row, :length] = seq
+    #         attention_mask[row, :length] = 1
+    #         option_mask[row, start:end] = True
+
+    #     if is_training:
+    #         self.model.train()
+    #         outputs = self.model(
+    #             input_ids=input_ids,
+    #             attention_mask=attention_mask,
+    #             use_cache=False,
+    #             return_dict=True
+    #         )
+    #     else:
+    #         self.model.eval()
+    #         with torch.inference_mode():
+    #             outputs = self.model(
+    #                 input_ids=input_ids,
+    #                 attention_mask=attention_mask,
+    #                 use_cache=False,
+    #                 return_dict=True
+    #             )
+                
+    #     rows, positions = option_mask.nonzero(as_tuple=True)
+
+    #     selected_logits = outputs.logits[rows, positions - 1].float() # (N, vocab_size), N 是所有被选 token 的总数量
+    #     targets = input_ids[rows, positions] # (N,), N 是所有被选 token 的总数量
+
+    #     token_log_probs = -F.cross_entropy(
+    #         selected_logits,
+    #         targets,
+    #         reduction="none", # 不聚合,返回 (N,)
+    #     )
+
+    #     # 将每个 token 的 log-prob 累加回所属序列。
+    #     scores = torch.zeros(
+    #         num_sequences,
+    #         dtype=torch.float32,
+    #         device=self.device,
+    #     )
+    #     scores.index_add_(dim=0, index=rows, source=token_log_probs)
+
+    #     return scores # (num_cpotions,)
+
+
+    # def score_batch(
+    #     self,
+    #     system_prompt: str,
+    #     batch_user_prompt: list[str],
+    #     options: list[str],
+    #     max_sequences: int = 8,
+    #     is_training: bool = False,
+    # ) -> list[dict]:
+    #     """
+    #     max_sequences: 每次 forward 最多处理多少条 prompt-option 序列。
+    #     返回顺序与 batch_user_prompt 一致。
+    #     """
+    #     assert options and batch_user_prompt and max_sequences > 0
+
+    #     sequences: list[torch.Tensor] = []
+    #     spans: list[tuple[int, int]] = []
+
+    #     # 顺序：
+    #     # prompt_0 + option_0, prompt_0 + option_1, ...
+    #     # prompt_1 + option_0, prompt_1 + option_1, ...
+    #     for user_prompt in batch_user_prompt:
+    #         seqs, seq_spans = self.get_sequences(
+    #             system_prompt,
+    #             user_prompt,
+    #             options,
+    #         )
+    #         sequences.extend(seqs)
+    #         spans.extend(seq_spans)
+
+    #     # 分块控制显存；分块边界可以位于同一 prompt 的选项之间。
+    #     score_chunks = []
+    #     for start in range(0, len(sequences), max_sequences):
+    #         end = start + max_sequences
+    #         chunk_sequences = sequences[start:end]
+    #         chunk_spans = spans[start:end]
+    #         chunk_scores = self._forward_scores(
+    #             chunk_sequences,
+    #             chunk_spans,
+    #             is_training=is_training
+    #         ) # (num_seqs,)
+    #         score_chunks.append(chunk_scores)
+
+    #     # [B*K] -> [B, K]
+    #     scores = torch.cat(score_chunks).reshape(
+    #         len(batch_user_prompt),
+    #         len(options),
+    #     )
+
+    #     probs = F.softmax(scores, dim=-1) # (B,K)
+    #     best_indices = scores.argmax(dim=-1).tolist() # list[int]
+
+    #     return [
+    #         {
+    #             "probs": probs[i],
+    #             "scores": scores[i],
+    #             "best_idx": best_indices[i],
+    #         }
+    #         for i in range(len(batch_user_prompt))
+    #     ]
+
+
 
     # def _forward_scores_vanilla(
     #     self,
@@ -325,10 +352,6 @@ class API_Jev(JevBase):
     ):
         pass
 
-    def score_batch(
-        self,
-    ):
-        pass
 
 
 
@@ -346,8 +369,6 @@ class Laya(JevBase):
     def encode(self):
         pass
     def score_options(self):
-        pass
-    def score_batch(self):
         pass
 
 
@@ -383,19 +404,19 @@ def main():
     
     breakpoint()
 
-    print("\n" + "=" * 50)
-    print("Test 2: score_batch (multiple prompts)")
-    batch_prompts = [
-        '新闻：地球是平的。\n这个新闻是对的吗？给出你的选择: [1]True,[2]False',
-        '新闻：水在100摄氏度沸腾。\n这个新闻是对的吗？给出你的选择: [1]True,[2]False',
-    ]
-    batch_results = model.score_batch(system_prompt, batch_prompts, options, max_sequences=4)
-    for i, res in enumerate(batch_results):
-        print(f"\nPrompt {i}: {batch_prompts[i][:30]}...")
-        print(f"  Scores: {res['scores'].tolist()}")
-        print(f"  Probs:  {res['probs'].tolist()}")
-        print(f"  Best index: {res['best_idx']} -> '{options[res['best_idx']]}'")
-    breakpoint()
+    # print("\n" + "=" * 50)
+    # print("Test 2: score_batch (multiple prompts)")
+    # batch_prompts = [
+    #     '新闻：地球是平的。\n这个新闻是对的吗？给出你的选择: [1]True,[2]False',
+    #     '新闻：水在100摄氏度沸腾。\n这个新闻是对的吗？给出你的选择: [1]True,[2]False',
+    # ]
+    # batch_results = model.score_batch(system_prompt, batch_prompts, options, max_sequences=4)
+    # for i, res in enumerate(batch_results):
+    #     print(f"\nPrompt {i}: {batch_prompts[i][:30]}...")
+    #     print(f"  Scores: {res['scores'].tolist()}")
+    #     print(f"  Probs:  {res['probs'].tolist()}")
+    #     print(f"  Best index: {res['best_idx']} -> '{options[res['best_idx']]}'")
+    # breakpoint()
 
 
 if __name__ == '__main__':
