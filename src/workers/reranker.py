@@ -37,21 +37,28 @@ class RerankerBase(ABC):
         pass
 
 
-def _pair(query: str, passage: Passage) -> str:
+def _pair(query: str, passage: Passage, instruction: str = _INSTRUCTION) -> str:
     document = passage.text.strip()
     if passage.title:
         document = f"{passage.title}\n{document}"
     return (
-        f"<Instruct>: {_INSTRUCTION}\n"
+        f"<Instruct>: {instruction}\n"
         f"<Query>: {query}\n"
         f"<Document>: {document}"
     )
 
 
 class Qwen3Reranker(RerankerBase):
-    def __init__(self, model_path: str, batch_size: int = 16, max_length: int = 2048):
+    def __init__(
+        self,
+        model_path: str,
+        batch_size: int = 16,
+        max_length: int = 2048,
+        instruction: str = _INSTRUCTION,
+    ):
         self.batch_size = batch_size
         self.max_length = max_length
+        self.instruction = instruction
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         if self.device.type == 'cpu': print('using cpu!!!')
         self.tokenizer = AutoTokenizer.from_pretrained(
@@ -85,7 +92,7 @@ class Qwen3Reranker(RerankerBase):
     ) -> list[float]:
         room = self.max_length - len(self.prefix_tokens) - len(self.suffix_tokens)
         encoded = self.tokenizer(
-            [_pair(query, passage) for passage in passages],
+            [_pair(query, passage, self.instruction) for passage in passages],
             padding=False,
             truncation=True,
             max_length=max(room,8),
