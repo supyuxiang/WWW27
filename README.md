@@ -7,26 +7,24 @@
 ```text
 www27/
 ├── src/
-│   ├── workers/          # 模型、检索、重排
-│   ├── prompts.py        # 判定、few-shot、检索门控与 aspect 提示
-│   ├── utils.py          # 数据加载、Accuracy / Macro-F1、答案解析
-│   ├── config.py         # Document、Passage 与实验配置
-│   └── aspects.py        # 事实核查切面定义
-├── eval/                 # 评测入口
-├── scripts/eval/         # 多模型循环脚本
-├── data/preprocess.py    # 把 benchmark 写成统一 jsonl
-├── demo_bm25.py          # fastembed BM25 点积示例
-└── third_party/Math-Verify/  # 从生成文本里抽取 \boxed{} 答案
+│   ├── workers/
+│   │   ├── __init__.py        # 导出下面这些类
+│   │   ├── jev.py             # LLM_as_Jev：对候选 verdict 打 token log-prob
+│   │   ├── llm_generator.py   # VLLMGenerator / APIGenerator：本地 vLLM 与 DeepSeek API
+│   │   ├── retriever.py       # BM25Retriever（内存）/ SQLiteBM25Retriever（FTS5）
+│   │   └── reranker.py        # Qwen3Reranker：按 query 对 passage 打 yes/no 概率
+│   ├── prompts.py             # 判定、few-shot、检索门控与 aspect 提示
+│   ├── utils.py               # 数据加载、Accuracy / Macro-F1、答案解析
+│   ├── config.py              # Document、Passage 与实验配置
+│   └── aspects.py             # 事实核查切面定义
+├── eval/                      # 评测入口
+├── scripts/eval/              # 多模型循环脚本
+├── data/preprocess.py         # 把 benchmark 写成统一 jsonl
+├── demo_bm25.py               # fastembed BM25 点积示例
+└── third_party/Math-Verify/   # 从生成文本里抽取 \boxed{} 答案
 ```
 
-`src/workers` 是运行时组件，评测脚本通过 `from src.workers import ...` 使用：
-
-| 模块 | 作用 |
-|---|---|
-| `jev.py` | `LLM_as_Jev` 对候选 verdict 打 token log-prob，不逐 token 解码 |
-| `llm_generator.py` | `VLLMGenerator` 走本地 vLLM，`APIGenerator` 走 DeepSeek API |
-| `retriever.py` | `BM25Retriever` 为内存索引，`SQLiteBM25Retriever` 为 FTS5 磁盘索引 |
-| `reranker.py` | `Qwen3Reranker` 按 query 对 passage 打 yes/no 概率 |
+评测脚本通过 `from src.workers import ...` 使用这些类。
 
 评测入口：
 
