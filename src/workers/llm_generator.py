@@ -11,7 +11,6 @@ from typing import Any
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 
 import torch
-import torch.nn.functional as F
 from vllm import LLM, SamplingParams
 os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")
 from openai import OpenAI

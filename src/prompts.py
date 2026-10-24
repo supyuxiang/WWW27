@@ -3,8 +3,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from transformers import AutoTokenizer
-
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0,str(ROOT))
 
@@ -218,7 +216,7 @@ def prompt4jev_judge(
 
 # for llm_as_jev
 def format_prefix4jev(
-    tokenizer: AutoTokenizer,
+    tokenizer,
     system_prompt:str,
     user_prompt:str,
     prefill: str | None = None,
@@ -247,6 +245,47 @@ def format_prefix4jev(
 
 
 ############################################################
+
+
+# def prompt4whether_retrieval(
+#     claim: str,
+#     evidence: str | None,
+# ) -> tuple[str, str, list[str]]:
+#     return prompt4jev_whether_retrieval(claim, evidence)
+
+
+# def prompt4aspect_check(
+#     claim: str,
+#     aspect: Aspect,
+#     evidence: str | None = None,
+# ) -> tuple[str, str, list[str]]:
+#     """Binary check. Option 1 is the positive class read from probs[0]."""
+#     system_prompt = SYSTEM_PROMPT
+#     options = ["1", "2"]
+#     lines = [f"Claim: {claim}"]
+#     if evidence is not None:
+#         lines.append(f"Current evidence: {evidence}")
+#     lines.extend([
+#         f"Aspect: {aspect.name}",
+#         f"Definition: {aspect.definition}",
+#         "Does this aspect of the claim still need external evidence?",
+#         "[1] yes (description: This aspect is unresolved and needs retrieval.)",
+#         "[2] no (description: Current evidence is enough for this aspect, or it does not apply.)",
+#     ])
+#     return system_prompt, "\n".join(lines), options
+
+
+# def prompt4what_choice(
+#     benchmark_cls: Benchmark,
+#     claim: str,
+#     evidence: str | None = None,
+# ) -> tuple[str, str, list[str]]:
+#     return prompt4jev_judge(
+#         benchmark_cls,
+#         claim,
+#         few_shot=None,
+#         evidence=evidence,
+#     )
 
 
 def prompt4jev_whether_retrieval(

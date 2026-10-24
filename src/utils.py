@@ -1,17 +1,8 @@
 import json
-import math
 import re
-import yaml
 import sys
 from pathlib import Path
 from dataclasses import dataclass
-
-import numpy as np
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from transformers import AutoModelForCausalLM, AutoTokenizer
-from vllm import LLM, SamplingParams
 
 ROOT = Path(__file__).parent.parent.resolve()
 sys.path.insert(0,str(ROOT))
@@ -112,7 +103,9 @@ BENCHMARKS = [
 ]
 
 
-def load_tokenizer(model_path: str | Path, is_training: bool=False) -> AutoTokenizer:
+def load_tokenizer(model_path: str | Path, is_training: bool=False):
+    from transformers import AutoTokenizer
+
     tok = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
     if tok.pad_token_id is None:
         tok.pad_token_id = tok.eos_token_id
@@ -242,16 +235,10 @@ def compute_f1(
 
 ########   normalize  generated text    ##########
 MATH_VERIFY_ROOT = ROOT / "third_party" / "Math-Verify"
-sys.path.insert(0, str(MATH_VERIFY_ROOT / "src"))
-
-from math_verify import parse as math_verify_parse
-from math_verify.parser import LatexExtractionConfig
 
 _LATEX_WRAPPER_RE = re.compile(
     r"\\(?:text|textnormal|mathrm|textbf|operatorname|mbox)\s*\{([^{}]*)\}"
 )
-_BOXED_EXTRACTION = [LatexExtractionConfig(boxed_match_priority=0)]
-
 _SUPPORT_ALIASES = {"support", "supports", "supported", "s"}
 _REFUTE_ALIASES = {
     "refute",
@@ -293,10 +280,16 @@ def _semantic_key(value: str) -> str:
 def _extract_answer_candidates(text: str) -> list[str]:
     if not text:
         return []
+    vendor = str(MATH_VERIFY_ROOT / "src")
+    if vendor not in sys.path:
+        sys.path.insert(0, vendor)
+    from math_verify import parse as math_verify_parse
+    from math_verify.parser import LatexExtractionConfig
+
     try:
         parsed = math_verify_parse(
             text,
-            extraction_config=_BOXED_EXTRACTION,
+            extraction_config=[LatexExtractionConfig(boxed_match_priority=0)],
             # first_match also exposes the raw extracted text (needed for
             # textual labels); no_fallback only returns the SymPy object.
             fallback_mode="first_match",

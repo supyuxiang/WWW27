@@ -104,7 +104,7 @@ def main() -> None:
     parser.add_argument("--gpu_memory_utilization", type=float, default=0.92)
     parser.add_argument("--max_model_len", type=int, default=8192)
     parser.add_argument("--fs_limit", type=int, default=0)
-    parser.add_argument('--generator', choice=['vllm','api'], default='vllm')
+    parser.add_argument("--generator", choices=["vllm", "api"], default="vllm")
     parser.add_argument(
         "--enable-thinking",
         action=argparse.BooleanOptionalAction,
@@ -126,15 +126,16 @@ def main() -> None:
         )
     elif args.generator == 'api':
         generator = APIGenerator(
-            base_url='https//api.deepseek.com',
-            api_key='',
-            model='deepseek-flash',
-            max_tokens=args.max_token,
+            base_url="https://api.deepseek.com",
+            api_key="",
+            model="deepseek-flash",
+            max_tokens=args.max_tokens,
             enable_thinking=True,
-            reasoning_effort='high',
-            max_retries=3
+            reasoning_effort="high",
+            max_retries=3,
         )
-        pass
+    else:
+        raise ValueError(f"unknown generator {args.generator!r}")
 
     summaries: dict[str, dict] = {}
     for name in args.benchmarks:
@@ -146,7 +147,6 @@ def main() -> None:
             split="train",
         )
         summaries[name] = run_one(
-            name=name,
             examples=examples,
             bench=bench,
             generator=generator,
