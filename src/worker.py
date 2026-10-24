@@ -230,9 +230,9 @@ class LLM_as_Jev(Base):
             prefill=ASSISTANT_PREFILL,
         )
         prefix_ids: torch.Tensor = self.encode(prefix).to(torch.long).view(1,-1)
-        start = int(prefix_ids.numel())
-        sequences:list[torch.Tensor] = []
-        spans:list[tuple[int,int]] = []
+        start = prefix_ids.numel()
+        sequences : list[torch.Tensor] = []
+        spans : list[tuple[int,int]] = []
         for option in options:
             # 每一个sequence分别用tokenizer进行encode，最终存在list中以便后续整体padding
             full_seq = prefix + option
