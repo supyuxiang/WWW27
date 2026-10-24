@@ -230,7 +230,7 @@ class LLM_as_Jev(Base):
             prefill=ASSISTANT_PREFILL,
         )
         prefix_ids: torch.Tensor = self.encode(prefix).to(torch.long).view(1,-1)
-        start = prefix_ids.numel()
+        start: int = prefix_ids.numel()
         sequences : list[torch.Tensor] = []
         spans : list[tuple[int,int]] = []
         for option in options:
@@ -238,7 +238,7 @@ class LLM_as_Jev(Base):
             full_seq = prefix + option
             full_ids: torch.Tensor = self.encode(full_seq).to(torch.long).view(1,-1)
             sequences.append(full_ids)
-            end = int(full_ids.numel())
+            end: int = full_ids.numel()
             spans.append(
                 (start, end)
             )
@@ -254,7 +254,7 @@ class LLM_as_Jev(Base):
 
         num_sequences = len(sequences)
         max_len = max(int(seq.numel()) for seq in sequences)
-        pad_id = self.tokenizer.pad_token_id
+        pad_id = self.tokenizer.pad_token_id; assert pad_id is not None
         
         input_ids = torch.full(
             (num_sequences, max_len),

@@ -39,7 +39,8 @@ def run_one(
     name = bench.name
     output_dir.mkdir(parents=True, exist_ok=True)
     labels = list(bench.choice_dict)
-    prompts = [
+
+    prompts: list[tuple[str, str, list[str]]] = [
         prompt4llm_judge(
             benchmark_cls=bench,
             claim=item["claim"],
