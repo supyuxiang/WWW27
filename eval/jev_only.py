@@ -74,12 +74,11 @@ def run_one(
     trajectory_path = output_dir / f"jev_only_{name}.jsonl"
     started = time.perf_counter()
     with trajectory_path.open("w", encoding="utf-8") as handle:
-        for item, prompt in tqdm(
+        for item, (system_prompt, user_prompt, prompt_options) in tqdm(
             zip(examples, prompts),
             total=len(examples),
             desc=name,
         ):
-            system_prompt, user_prompt, prompt_options = prompt
             scored = jev.score_options(system_prompt, user_prompt, prompt_options)
             best_idx = int(scored["best_idx"])
             prediction = labels[best_idx]
