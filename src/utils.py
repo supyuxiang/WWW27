@@ -232,6 +232,42 @@ def compute_f1(
     return f1_sum / len(labels)
 
 
+def per_class_scores(
+    gold: list[str],
+    pred: list[str],
+    labels: list[str],
+) -> dict[str, dict[str, float]]:
+    """Precision, recall, and F1 for each official label.
+
+    Predictions outside ``labels`` (such as ``invalid``) count as false
+    negatives for the gold label and are not a class of their own.
+    """
+    scores: dict[str, dict[str, float]] = {}
+    for label in labels:
+        tp = fp = fn = 0
+        for truth, guess in zip(gold, pred):
+            if guess == label and truth == label:
+                tp += 1
+            elif guess == label and truth != label:
+                fp += 1
+            elif truth == label and guess != label:
+                fn += 1
+        precision = tp / (tp + fp) if tp + fp else 0.0
+        recall = tp / (tp + fn) if tp + fn else 0.0
+        f1 = (
+            2 * precision * recall / (precision + recall)
+            if precision + recall
+            else 0.0
+        )
+        scores[label] = {
+            "precision": precision,
+            "recall": recall,
+            "f1": f1,
+        }
+    return scores
+
+
+
 
 ########   normalize  generated text    ##########
 MATH_VERIFY_ROOT = ROOT / "third_party" / "Math-Verify"
