@@ -75,33 +75,6 @@ class LLM_as_Jev(JevBase):
         )['input_ids'].to(self.device)
         return encoded # torch.Tensor
 
-    def get_sequences(
-        self,
-        system_prompt: str,
-        user_prompt:str,
-        options: list[str],
-    ) -> tuple[list[list[int]], list[tuple[int,int]]]:
-        prefix = format_prefix4jev(
-            self.tokenizer,
-            system_prompt,
-            user_prompt,
-            prefill=ASSISTANT_PREFILL,
-        )
-        prefix_ids: torch.Tensor = self.encode(prefix).to(torch.long).view(1,-1)
-        start: int = prefix_ids.numel()
-        sequences : list[torch.Tensor] = []
-        spans : list[tuple[int,int]] = []
-        for option in options:
-            # 每一个sequence分别用tokenizer进行encode，最终存在list中以便后续整体padding
-            full_seq = prefix + option
-            full_ids: torch.Tensor = self.encode(full_seq).to(torch.long).view(1,-1)
-            sequences.append(full_ids)
-            end: int = full_ids.numel()
-            spans.append(
-                (start, end)
-            )
-        return sequences, spans
-
     def _option_token_ids(self, options: list[str]) -> torch.Tensor:
         token_ids: list[int] = []
         for option in options:
@@ -143,7 +116,6 @@ class LLM_as_Jev(JevBase):
             best_idx=int(torch.argmax(probs)),
         )
 
-
     def decode(self, tokens: list[int]) -> str:
         return self.tokenizer.decode(tokens, skip_special_tokens=True)
 
@@ -156,6 +128,33 @@ class LLM_as_Jev(JevBase):
                 [p.numel() for p in self.model.parameters()]
             )
 
+
+    # def get_sequences(
+    #     self,
+    #     system_prompt: str,
+    #     user_prompt:str,
+    #     options: list[str],
+    # ) -> tuple[list[list[int]], list[tuple[int,int]]]:
+    #     prefix = format_prefix4jev(
+    #         self.tokenizer,
+    #         system_prompt,
+    #         user_prompt,
+    #         prefill=ASSISTANT_PREFILL,
+    #     )
+    #     prefix_ids: torch.Tensor = self.encode(prefix).to(torch.long).view(1,-1)
+    #     start: int = prefix_ids.numel()
+    #     sequences : list[torch.Tensor] = []
+    #     spans : list[tuple[int,int]] = []
+    #     for option in options:
+    #         # 每一个sequence分别用tokenizer进行encode，最终存在list中以便后续整体padding
+    #         full_seq = prefix + option
+    #         full_ids: torch.Tensor = self.encode(full_seq).to(torch.long).view(1,-1)
+    #         sequences.append(full_ids)
+    #         end: int = full_ids.numel()
+    #         spans.append(
+    #             (start, end)
+    #         )
+    #     return sequences, spans
 
 
     # def _forward_scores(

@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
-import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -20,6 +18,7 @@ from src.utils import (
     Benchmark,
     compute_accuracy,
     compute_f1,
+    per_class_scores,
     load_benchmark,
     parse_generation
 )
@@ -35,6 +34,7 @@ def run_one(
     generator: VLLMGenerator | APIGenerator,
     few_shot: str,
     output_dir: Path,
+    is_cot: bool = False
 ) -> dict[str,Any]:
     name = bench.name
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -46,6 +46,7 @@ def run_one(
             claim=item["claim"],
             few_shot=few_shot,
             evidence=item["evidence"],
+            is_cot=is_cot
         )
         for item in examples
     ]
@@ -74,12 +75,14 @@ def run_one(
                 "prediction": prediction,
             }, ensure_ascii=False) + "\n")
 
+    class_scores = per_class_scores(gold, pred, labels)
     summary = {
         "benchmark": name,
         "n": len(gold),
         "invalid": invalid,
         "accuracy": compute_accuracy(gold, pred),
-        "f1": compute_f1(gold, pred, bench),
+        "macro_f1": compute_f1(gold, pred, bench),
+        "per_class": class_scores,
         "gold_counts": dict(Counter(gold)),
         "prediction_counts": dict(Counter(pred)),
         "few_shot": few_shot,
@@ -106,10 +109,11 @@ def main() -> None:
     parser.add_argument("--fs_limit", type=int, default=0)
     parser.add_argument("--generator", choices=["vllm", "api"], default="vllm")
     parser.add_argument(
-        "--enable-thinking",
+        "--enable_thinking",
         action=argparse.BooleanOptionalAction,
         default=False,
     )
+    parser.add_argument('--is_cot', action='store_true')
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
@@ -152,6 +156,7 @@ def main() -> None:
             generator=generator,
             few_shot=few_shot,
             output_dir=output_dir,
+            is_cot=args.is_cot
         )
 
     (output_dir / "llm_gen_only_summary.json").write_text(
@@ -161,19 +166,39 @@ def main() -> None:
     lines = [
         "# LLM generation with gold evidence",
         "",
-        "| Benchmark | n | Accuracy | F1 | Invalid |",
+        "| Benchmark | n | Accuracy | Macro-F1 | Invalid |",
         "|---|---:|---:|---:|---:|",
     ]
     for name, summary in summaries.items():
         lines.append(
             f"| {name} | {summary['n']} | {summary['accuracy']:.4f} | "
-            f"{summary['f1']:.4f} | {summary['invalid']} |"
+            f"{summary['macro_f1']:.4f} | {summary['invalid']} |"
         )
+    for name, summary in summaries.items():
+        lines.extend([
+            "",
+            f"## {name}",
+            "",
+            "| Label | Precision | Recall | F1 |",
+            "|---|---:|---:|---:|",
+        ])
+        for label, metrics in summary["per_class"].items():
+            lines.append(
+                f"| {label} | {metrics['precision']:.4f} | "
+                f"{metrics['recall']:.4f} | {metrics['f1']:.4f} |"
+            )
     (output_dir / "llm_gen_only_summary.md").write_text(
         "\n".join(lines) + "\n",
         encoding="utf-8",
     )
     print("wrote", output_dir, flush=True)
+
+    import gc
+    import torch
+    
+    del generator
+    gc.collect()
+    torch.cuda.empty_cache()
 
 
 if __name__ == "__main__":
