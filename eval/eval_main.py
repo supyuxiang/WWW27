@@ -1,420 +1,469 @@
-# from __future__ import annotations
+from __future__ import annotations
 
-# import argparse
-# import json
-# import sys
-# import time
-# from collections import Counter
-# from dataclasses import replace
-# from pathlib import Path
+import argparse
+import json
+import sys
+import time
+from collections import Counter
+from dataclasses import replace
+from pathlib import Path
+from typing import Any
 
-# ROOT = Path(__file__).resolve().parents[1]
-# sys.path.insert(0, str(ROOT))
+from tqdm import tqdm
 
-# from src.aspects import ASPECTS, ASPECT_BY_NAME
-# from src.config import Document, Passage, WWW27Config
-# from src.prompts import (
-#     construct_text4rerankng,
-#     prompt4aspect_check,
-#     prompt4what_choice,
-#     prompt4whether_retrieval,
-# )
-# from src.workers import (
-#     BM25Retriever,
-#     LLM_as_Jev,
-#     Qwen3Reranker,
-#     SQLiteBM25Retriever,
-# )
-# from src.utils import (
-#     Benchmark,
-#     clip,
-#     compute_accuracy,
-#     compute_f1,
-#     format_evidence,
-#     is_leakage,
-#     load_benchmark,
-# )
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
-# BENCH_ROOT = Path("/root/autodl-tmp/www27/benchmark")
-# INDEX_ROOT = Path("/root/autodl-tmp/www27/index")
-# DEFAULT_MODEL = "/root/autodl-tmp/models/Qwen3-8B"
-# DEFAULT_RERANKER = "/root/autodl-tmp/models/Qwen3-Reranker-0.6B"
+from src.aspects import ASPECTS, Aspect
+from src.config import Passage
+from src.prompts import (
+    build_few_shot,
+    prompt4jev_judge,
+    prompt4jev_what_aspect,
+    prompt4jev_whether_retrieval,
+)
+from src.utils import (
+    Benchmark,
+    compute_accuracy,
+    compute_f1,
+    load_benchmark,
+    load_corpus,
+    per_class_scores,
+)
+from src.workers import (
+    BM25Retriever,
+    LLM_as_Jev,
+    Qwen3Reranker,
+    SQLiteBM25Retriever,
+)
 
-# _INDEX_PATHS = {
-#     "fever": INDEX_ROOT / "fever_fts.sqlite",
-#     "averitec": INDEX_ROOT / "averitec_dev_fts.sqlite",
-# }
-
-
-# def _probs(scored: dict) -> list[float]:
-#     return [float(item) for item in scored["probs"]]
-
-
-# def select_aspects(scores: dict[str, float], tau: float, limit: int) -> list[str]:
-#     ranked = sorted(scores, key=lambda name: (-scores[name], name))
-#     chosen = [name for name in ranked if scores[name] >= tau]
-#     if limit > 0:
-#         chosen = chosen[:limit]
-#     if not chosen and ranked:
-#         chosen = ranked[:1]
-#     return chosen
+INDEX_ROOT = Path("/root/autodl-tmp/www27/index")
+DEFAULT_MODEL = "/root/autodl-tmp/models/Qwen3-8B"
+DEFAULT_RERANKER = "/root/autodl-tmp/models/Qwen3-Reranker-4B"
+DEFAULT_OUTPUT_DIR = "/root/autodl-tmp/www27/results/eval_main"
+SQLITE_INDEXES = {
+    "fever": INDEX_ROOT / "fever_fts.sqlite",
+    "averitec": INDEX_ROOT / "averitec_dev_fts.sqlite",
+}
+# prompt4jev_whether_retrieval lists WHETHER_RETRIEVAL in insertion order.
+RETRIEVAL_OPTION_INDEX = 0
 
 
-# def load_scifact_documents(bench_root: Path) -> list[Document]:
-#     path = bench_root / "scifact" / "data" / "corpus.jsonl"
-#     documents: list[Document] = []
-#     with path.open(encoding="utf-8") as handle:
-#         for line in handle:
-#             line = line.strip()
-#             if not line:
-#                 continue
-#             row = json.loads(line)
-#             abstract = row.get("abstract") or ""
-#             if isinstance(abstract, list):
-#                 text = " ".join(str(part) for part in abstract)
-#             else:
-#                 text = str(abstract)
-#             doc_id = str(row.get("doc_id") or "")
-#             if not doc_id or not text.strip():
-#                 continue
-#             documents.append(
-#                 Document(doc_id=doc_id, title=str(row.get("title") or ""), text=text.strip())
-#             )
-#     return documents
+def _as_floats(value: Any) -> list[float]:
+    if hasattr(value, "detach"):
+        value = value.detach().float().cpu().tolist()
+    return [float(item) for item in value]
 
 
-# class OfflineRetriever:
-#     """SciFact stays in memory. FEVER and AVeriTeC read a prebuilt FTS index."""
+class ClaimRetriever:
+    """BM25 over a SQLite FTS index, or an in-memory index for small corpora."""
 
-#     def __init__(self, bench_root: Path, index_root: Path, max_passage_chars: int):
-#         self.bench_root = bench_root
-#         self.index_root = index_root
-#         self.max_passage_chars = max_passage_chars
-#         self._scifact: BM25Retriever | None = None
-#         self._sqlite: dict[str, SQLiteBM25Retriever] = {}
+    def __init__(self, max_passage_chars: int = 2000):
+        self.max_passage_chars = max_passage_chars
+        self._sqlite: dict[str, SQLiteBM25Retriever] = {}
+        self._memory: dict[str, BM25Retriever] = {}
 
-#     def search(
-#         self,
-#         benchmark: str,
-#         query: str,
-#         k: int,
-#         exclude_ids: set[str] | None = None,
-#     ) -> list[Passage]:
-#         if benchmark == "scifact":
-#             if self._scifact is None:
-#                 self._scifact = BM25Retriever(load_scifact_documents(self.bench_root))
-#             return self._scifact.search(
-#                 query,
-#                 k=k,
-#                 exclude_ids=exclude_ids,
-#                 max_passage_chars=self.max_passage_chars,
-#             )
-#         path = self.index_root / _INDEX_PATHS[benchmark].name
-#         if benchmark not in self._sqlite:
-#             if not path.is_file():
-#                 script = "build_fever_fts.py" if benchmark == "fever" else "build_averitec_fts.py"
-#                 raise FileNotFoundError(
-#                     f"Missing offline index {path}. Build it with scripts/{script} "
-#                     f"from the corpus under {self.bench_root / benchmark}."
-#                 )
-#             self._sqlite[benchmark] = SQLiteBM25Retriever(path, claim_scoped=False)
-#         return self._sqlite[benchmark].search(
-#             query,
-#             k=k,
-#             exclude_ids=exclude_ids,
-#             max_passage_chars=self.max_passage_chars,
-#         )
+    def search(
+        self,
+        benchmark: str,
+        claim: str,
+        k: int,
+        exclude_ids: set[str] | None = None,
+    ) -> list[Passage]:
+        retriever = self._get(benchmark)
+        return retriever.search(
+            claim,
+            k=k,
+            exclude_ids=exclude_ids,
+            max_passage_chars=self.max_passage_chars,
+        )
 
-#     def close(self) -> None:
-#         for retriever in self._sqlite.values():
-#             retriever.close()
-#         self._sqlite.clear()
+    def _get(self, benchmark: str):
+        index = SQLITE_INDEXES.get(benchmark)
+        if index is not None:
+            if benchmark not in self._sqlite:
+                if not index.is_file():
+                    raise FileNotFoundError(index)
+                self._sqlite[benchmark] = SQLiteBM25Retriever(
+                    index,
+                    claim_scoped=False,
+                )
+            return self._sqlite[benchmark]
+        if benchmark not in self._memory:
+            documents = load_corpus(benchmark)
+            self._memory[benchmark] = BM25Retriever(documents)
+        return self._memory[benchmark]
+
+    def close(self) -> None:
+        for retriever in self._sqlite.values():
+            retriever.close()
+        self._sqlite.clear()
 
 
-# def run_example(
-#     llm: LLM_as_Jev,
-#     retriever: OfflineRetriever,
-#     reranker: Qwen3Reranker,
-#     bench: Benchmark,
-#     example: dict,
-#     config: WWW27Config,
-# ) -> dict:
-#     claim = clip(example.get("claim"), config.max_claim_chars)
-#     evidence: list[Passage] = []
-#     seen_docs: set[str] = set()
-#     inspected: set[str] = set()
-#     query_log: list[dict] = []
-#     aspect_probs: dict[str, float] = {}
-#     gate_probs: list[float] = []
-#     coarse: list[Passage] | None = None
-#     calls = 0
-#     rounds = 0
-#     stop_reason = ""
-#     blocked: set[str] = set()
-#     if example.get("id") is not None:
-#         blocked.add(str(example["id"]))
-
-#     def coarse_pool() -> list[Passage] | None:
-#         nonlocal coarse, calls
-#         if coarse is not None:
-#             return coarse
-#         if calls >= config.search_cap:
-#             return None
-#         hits = retriever.search(bench.name, claim, config.bm25_candidates, blocked)
-#         calls += 1
-#         kept: list[Passage] = []
-#         for hit in hits:
-#             if hit.doc_id in seen_docs or hit.doc_id in blocked:
-#                 continue
-#             if is_leakage(claim, blocked, hit.doc_id, hit.text):
-#                 continue
-#             kept.append(hit)
-#         coarse = kept
-#         return coarse
-
-#     while calls < config.search_cap or coarse is not None:
-#         rounds += 1
-#         evidence_text = format_evidence(evidence, config.max_evidence_chars) if evidence else None
-#         system, user, options = prompt4whether_retrieval(claim, evidence_text)
-#         scored = llm.score_options(system, user, options)
-#         p_retrieve = _probs(scored)[0]
-#         gate_probs.append(p_retrieve)
-#         if p_retrieve < config.tau_g:
-#             stop_reason = "gate"
-#             break
-
-#         uncovered = [aspect for aspect in ASPECTS if aspect.name not in inspected]
-#         if not uncovered:
-#             stop_reason = "no_uncovered_aspect"
-#             break
-#         scores: dict[str, float] = {}
-#         for aspect in uncovered:
-#             system, user, options = prompt4aspect_check(claim, aspect, evidence_text)
-#             scored = llm.score_options(system, user, options)
-#             scores[aspect.name] = _probs(scored)[0]
-#         aspect_probs.update(scores)
-#         selected = select_aspects(scores, config.tau_a, config.max_aspects)
-#         if not selected:
-#             stop_reason = "no_uncovered_aspect"
-#             break
-
-#         pool = coarse_pool()
-#         if pool is None:
-#             stop_reason = "budget"
-#             break
-#         for name in selected:
-#             inspected.add(name)
-#             aspect = ASPECT_BY_NAME[name]
-#             query = construct_text4rerankng(claim, aspect)
-#             candidates = [item for item in pool if item.doc_id not in seen_docs]
-#             ranked = reranker.rerank(query, candidates, config.passages_per_query)
-#             kept_rows = []
-#             for hit, rerank_score in ranked:
-#                 seen_docs.add(hit.doc_id)
-#                 picked = replace(
-#                     hit,
-#                     score=rerank_score,
-#                     query=query,
-#                     aspect=name,
-#                     sub_claim=aspect.definition,
-#                 )
-#                 evidence.append(picked)
-#                 kept_rows.append({"doc_id": picked.doc_id, "score": rerank_score})
-#             query_log.append({"aspect": name, "query": query, "kept": kept_rows})
-#     if not stop_reason:
-#         stop_reason = "budget"
-
-#     evidence_text = format_evidence(evidence, config.max_evidence_chars) if evidence else None
-#     labels = list(bench.choice_dict)
-#     system, user, options = prompt4what_choice(bench, claim, evidence_text)
-#     scored = llm.score_options(system, user, options)
-#     probs = _probs(scored)
-#     prediction = labels[int(scored["best_idx"])]
-#     return {
-#         "id": example.get("id"),
-#         "claim": claim,
-#         "gold": example.get("label"),
-#         "prediction": prediction,
-#         "judge_probs": {label: probs[i] for i, label in enumerate(labels)},
-#         "gate_probs": gate_probs,
-#         "aspect_probs": aspect_probs,
-#         "aspects": [item["aspect"] for item in query_log],
-#         "queries": query_log,
-#         "stop_reason": stop_reason,
-#         "retrieval_rounds": rounds,
-#         "search_calls": calls,
-#         "n_evidence": len(evidence),
-#         "evidence": [
-#             {
-#                 "doc_id": item.doc_id,
-#                 "title": item.title,
-#                 "score": item.score,
-#                 "aspect": item.aspect,
-#                 "query": item.query,
-#                 "text": item.text,
-#             }
-#             for item in evidence
-#         ],
-#         "error": None,
-#     }
+def format_passages(passages: list[Passage]) -> str | None:
+    if not passages:
+        return None
+    parts = []
+    for index, passage in enumerate(passages, start=1):
+        title = f"{passage.title}\n" if passage.title else ""
+        parts.append(f"[{index}] {title}{passage.text}")
+    return "\n\n".join(parts)
 
 
-# def run_benchmark(
-#     name: str,
-#     examples: list[dict],
-#     bench: Benchmark,
-#     llm: LLM_as_Jev,
-#     retriever: OfflineRetriever,
-#     reranker: Qwen3Reranker,
-#     config: WWW27Config,
-#     output_dir: Path,
-# ) -> dict:
-#     output_dir.mkdir(parents=True, exist_ok=True)
-#     output_path = output_dir / f"eval_main_{name}.jsonl"
-#     started = time.perf_counter()
-#     gold: list[str] = []
-#     pred: list[str] = []
-#     n_errors = 0
-#     calls: list[int] = []
-#     rounds: list[int] = []
-#     with output_path.open("w", encoding="utf-8") as handle:
-#         for index, example in enumerate(examples, start=1):
-#             item_started = time.perf_counter()
-#             try:
-#                 row = run_example(llm, retriever, reranker, bench, example, config)
-#             except Exception as exc:
-#                 row = {
-#                     "id": example.get("id"),
-#                     "claim": example.get("claim"),
-#                     "gold": example.get("label"),
-#                     "prediction": None,
-#                     "error": f"{type(exc).__name__}: {exc}",
-#                     "search_calls": 0,
-#                     "retrieval_rounds": 0,
-#                 }
-#             row["latency_s"] = time.perf_counter() - item_started
-#             row["benchmark"] = name
-#             if row.get("error"):
-#                 n_errors += 1
-#             elif row.get("prediction") is not None and row.get("gold") is not None:
-#                 gold.append(row["gold"])
-#                 pred.append(row["prediction"])
-#                 calls.append(int(row.get("search_calls") or 0))
-#                 rounds.append(int(row.get("retrieval_rounds") or 0))
-#             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
-#             handle.flush()
-#             if index % 25 == 0 or index == len(examples):
-#                 print(f"{name}: {index}/{len(examples)}", flush=True)
-#     elapsed = time.perf_counter() - started
-#     summary = {
-#         "benchmark": name,
-#         "model": config.model_path,
-#         "retrieval": "bm25_top500_qwen3_reranker_top2",
-#         "n": len(gold),
-#         "n_errors": n_errors,
-#         "n_input": len(examples),
-#         "accuracy": compute_accuracy(gold, pred),
-#         "f1": compute_f1(gold, pred, bench),
-#         "avg_search_calls": sum(calls) / len(calls) if calls else 0.0,
-#         "avg_rounds": sum(rounds) / len(rounds) if rounds else 0.0,
-#         "gold_counts": dict(Counter(gold)),
-#         "prediction_counts": dict(Counter(pred)),
-#         "elapsed_s": elapsed,
-#         "output": str(output_path),
-#     }
-#     (output_dir / f"eval_main_{name}.summary.json").write_text(
-#         json.dumps(summary, indent=2), encoding="utf-8"
-#     )
-#     print(json.dumps(summary, indent=2), flush=True)
-#     return summary
+def _choose_from_scores(
+    scored: dict,
+    inspected: set[str],
+) -> tuple[Aspect | None, dict[str, float]]:
+    probs = _as_floats(scored["probs"])
+    named = {
+        aspect.name: probs[index]
+        for index, aspect in enumerate(ASPECTS)
+    }
+    ranked = sorted(ASPECTS, key=lambda aspect: named[aspect.name], reverse=True)
+    for aspect in ranked:
+        if aspect.name not in inspected:
+            return aspect, named
+    return None, named
 
 
-# def require_corpus(name: str, bench_root: Path, index_root: Path) -> None:
-#     if name == "scifact":
-#         path = bench_root / "scifact" / "data" / "corpus.jsonl"
-#         if not path.is_file():
-#             raise FileNotFoundError(path)
-#         return
-#     path = index_root / _INDEX_PATHS[name].name
-#     if path.is_file():
-#         return
-#     script = "build_fever_fts.py" if name == "fever" else "build_averitec_fts.py"
-#     raise FileNotFoundError(
-#         f"Missing offline index {path}. Build it with scripts/{script} "
-#         f"from the corpus under {bench_root / name}."
-#     )
+def select_aspect(
+    jev: LLM_as_Jev,
+    claim: str,
+    evidence: str | None,
+    inspected: set[str],
+) -> tuple[Aspect | None, dict[str, float]]:
+    system_prompt, user_prompt, options = prompt4jev_what_aspect(claim, evidence)
+    scored = jev.score_options(system_prompt, user_prompt, options)
+    return _choose_from_scores(scored, inspected)
 
 
-# def main() -> None:
-#     parser = argparse.ArgumentParser(description="Offline JARV eval with predefined queries")
-#     parser.add_argument("--benchmarks", nargs="+", default=["averitec", "fever", "scifact"])
-#     parser.add_argument("--model", default=DEFAULT_MODEL)
-#     parser.add_argument("--limit", type=int, default=200, help="<=0 means the full split")
-#     parser.add_argument("--output-dir", default="/root/yxfeng/www27/outputs/eval_main")
-#     parser.add_argument("--bench-root", default=str(BENCH_ROOT))
-#     parser.add_argument("--index-root", default=str(INDEX_ROOT))
-#     parser.add_argument("--tau-g", type=float, default=0.5)
-#     parser.add_argument("--tau-a", type=float, default=0.5)
-#     parser.add_argument("--search-cap", type=int, default=3)
-#     parser.add_argument("--max-aspects", type=int, default=3)
-#     parser.add_argument("--bm25-k", type=int, default=500)
-#     parser.add_argument("--rerank-k", type=int, default=2)
-#     parser.add_argument("--rerank-model", default=DEFAULT_RERANKER)
-#     args = parser.parse_args()
-
-#     config = WWW27Config(
-#         model_path=args.model,
-#         limit=args.limit,
-#         tau_g=args.tau_g,
-#         tau_a=args.tau_a,
-#         max_aspects=args.max_aspects,
-#         passages_per_query=args.rerank_k,
-#         bm25_candidates=args.bm25_k,
-#         rerank_model_path=args.rerank_model,
-#         search_cap=args.search_cap,
-#         queries_per_aspect=1,
-#     )
-#     output_dir = Path(args.output_dir)
-#     bench_root = Path(args.bench_root)
-#     index_root = Path(args.index_root)
-#     for name in args.benchmarks:
-#         require_corpus(name, bench_root, index_root)
-#     if not Path(config.rerank_model_path).is_dir():
-#         raise FileNotFoundError(
-#             f"Missing reranker {config.rerank_model_path}. "
-#             "Expected the Qwen3-Reranker-0.6B checkpoint."
-#         )
-#     llm = LLM_as_Jev(config.model_path)
-#     reranker = Qwen3Reranker(config.rerank_model_path)
-#     retriever = OfflineRetriever(bench_root, index_root, config.max_passage_chars)
-#     summaries = {}
-#     try:
-#         for name in args.benchmarks:
-#             examples, bench = load_benchmark(name, args.limit)
-#             print(f"{name}: {len(examples)} claims", flush=True)
-#             summaries[name] = run_benchmark(
-#                 name, examples, bench, llm, retriever, reranker, config, output_dir
-#             )
-#     finally:
-#         retriever.close()
-#     (output_dir / "eval_main_summary.json").write_text(
-#         json.dumps(summaries, indent=2), encoding="utf-8"
-#     )
-#     lines = [
-#         "# Offline JARV",
-#         "",
-#         "| Benchmark | n | Accuracy | F1 | Calls | Rounds | Errors |",
-#         "|---|---:|---:|---:|---:|---:|---:|",
-#     ]
-#     for name, summary in summaries.items():
-#         lines.append(
-#             f"| {name} | {summary['n']} | {summary['accuracy']:.4f} | "
-#             f"{summary['f1']:.4f} | {summary['avg_search_calls']:.2f} | "
-#             f"{summary['avg_rounds']:.2f} | {summary['n_errors']} |"
-#         )
-#     (output_dir / "eval_main_summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
-#     print("wrote", output_dir / "eval_main_summary.json", flush=True)
+def needs_retrieval(
+    jev: LLM_as_Jev,
+    claim: str,
+    evidence: str | None,
+) -> tuple[bool, dict[str, float]]:
+    system_prompt, user_prompt, options = prompt4jev_whether_retrieval(claim, evidence)
+    scored = jev.score_options(system_prompt, user_prompt, options)
+    probs = _as_floats(scored["probs"])
+    names = ("retrieval", "skip")
+    named = {name: probs[index] for index, name in enumerate(names)}
+    return int(scored["best_idx"]) == RETRIEVAL_OPTION_INDEX, named
 
 
-# if __name__ == "__main__":
-#     main()
+def retrieve_for_aspect(
+    retriever: ClaimRetriever,
+    reranker: Qwen3Reranker,
+    benchmark: str,
+    claim: str,
+    aspect: Aspect,
+    seen_ids: set[str],
+    bm25_k: int,
+    rerank_k: int,
+) -> list[Passage]:
+    candidates = retriever.search(
+        benchmark,
+        claim,
+        bm25_k,
+        exclude_ids=seen_ids,
+    )
+    ranked = reranker.rerank(
+        claim,
+        candidates,
+        top_k=rerank_k,
+        aspect=aspect,
+    )
+    selected = []
+    for passage, score in ranked:
+        if passage.doc_id in seen_ids:
+            continue
+        selected.append(replace(
+            passage,
+            score=float(score),
+            query=claim,
+            aspect=aspect.name,
+        ))
+        seen_ids.add(passage.doc_id)
+    return selected
+
+
+def run_claim(
+    example: dict,
+    bench: Benchmark,
+    jev: LLM_as_Jev,
+    reranker: Qwen3Reranker,
+    retriever: ClaimRetriever,
+    few_shot: str,
+    bm25_k: int,
+    rerank_k: int,
+    search_cap: int,
+) -> dict[str, Any]:
+    claim = example["claim"]
+    labels = list(bench.choice_dict)
+    evidence_passages: list[Passage] = []
+    inspected: set[str] = set()
+    seen_ids: set[str] = set()
+    rounds: list[dict[str, Any]] = []
+    stop_reason = "budget"
+
+    for _ in range(search_cap):
+        evidence_text = format_passages(evidence_passages)
+        retrieve, gate_probs = needs_retrieval(jev, claim, evidence_text)
+        if not retrieve:
+            rounds.append({"gate": gate_probs, "action": "skip"})
+            stop_reason = "skip"
+            break
+
+        aspect, aspect_probs = select_aspect(jev, claim, evidence_text, inspected)
+        if aspect is None:
+            rounds.append({
+                "gate": gate_probs,
+                "aspect_probs": aspect_probs,
+                "action": "no_aspect",
+            })
+            stop_reason = "no_aspect"
+            break
+
+        picked = retrieve_for_aspect(
+            retriever,
+            reranker,
+            bench.name,
+            claim,
+            aspect,
+            seen_ids,
+            bm25_k,
+            rerank_k,
+        )
+        inspected.add(aspect.name)
+        evidence_passages.extend(picked)
+        rounds.append({
+            "gate": gate_probs,
+            "aspect": aspect.name,
+            "aspect_probs": aspect_probs,
+            "n_kept": len(picked),
+            "doc_ids": [passage.doc_id for passage in picked],
+            "action": "retrieve",
+        })
+        if not picked:
+            continue
+
+    evidence_text = format_passages(evidence_passages)
+    system_prompt, user_prompt, options = prompt4jev_judge(
+        benchmark_cls=bench,
+        claim=claim,
+        few_shot=few_shot,
+        evidence=evidence_text,
+    )
+    scored = jev.score_options(system_prompt, user_prompt, options)
+    best_idx = int(scored["best_idx"])
+    probs = _as_floats(scored["probs"])
+    return {
+        "prediction": labels[best_idx],
+        "judge_probs": {label: probs[index] for index, label in enumerate(labels)},
+        "scores": _as_floats(scored["scores"]),
+        "stop_reason": stop_reason,
+        "rounds": rounds,
+        "evidence": [
+            {
+                "doc_id": passage.doc_id,
+                "title": passage.title,
+                "text": passage.text,
+                "rerank_score": passage.score,
+                "aspect": passage.aspect,
+            }
+            for passage in evidence_passages
+        ],
+    }
+
+
+def run_one(
+    examples: list[dict],
+    bench: Benchmark,
+    jev: LLM_as_Jev,
+    reranker: Qwen3Reranker,
+    retriever: ClaimRetriever,
+    few_shot: str,
+    output_dir: Path,
+    bm25_k: int,
+    rerank_k: int,
+    search_cap: int,
+    model_path: str,
+    reranker_path: str,
+) -> dict[str, Any]:
+    name = bench.name
+    output_dir.mkdir(parents=True, exist_ok=True)
+    labels = list(bench.choice_dict)
+    gold: list[str] = []
+    pred: list[str] = []
+    n_errors = 0
+    trajectory_path = output_dir / f"eval_main_{name}.jsonl"
+    started = time.perf_counter()
+    with trajectory_path.open("w", encoding="utf-8") as handle:
+        for example in tqdm(examples, desc=name):
+            item_started = time.perf_counter()
+            error = None
+            result: dict[str, Any] = {}
+            try:
+                result = run_claim(
+                    example,
+                    bench,
+                    jev,
+                    reranker,
+                    retriever,
+                    few_shot,
+                    bm25_k,
+                    rerank_k,
+                    search_cap,
+                )
+                gold.append(example["label"])
+                pred.append(result["prediction"])
+            except Exception as exc:
+                error = f"{type(exc).__name__}: {exc}"
+                n_errors += 1
+            row = {
+                "benchmark": name,
+                "id": example.get("id"),
+                "claim": example["claim"],
+                "gold": example.get("label"),
+                "prediction": result.get("prediction"),
+                "judge_probs": result.get("judge_probs", {}),
+                "scores": result.get("scores", []),
+                "stop_reason": result.get("stop_reason"),
+                "rounds": result.get("rounds", []),
+                "evidence": result.get("evidence", []),
+                "latency_s": time.perf_counter() - item_started,
+                "error": error,
+            }
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+            handle.flush()
+
+    summary = {
+        "benchmark": name,
+        "model": model_path,
+        "reranker": reranker_path,
+        "bm25_k": bm25_k,
+        "rerank_k": rerank_k,
+        "search_cap": search_cap,
+        "n": len(gold),
+        "n_errors": n_errors,
+        "n_input": len(examples),
+        "accuracy": compute_accuracy(gold, pred),
+        "macro_f1": compute_f1(gold, pred, bench),
+        "per_class": per_class_scores(gold, pred, labels),
+        "gold_counts": dict(Counter(gold)),
+        "prediction_counts": dict(Counter(pred)),
+        "few_shot": few_shot,
+        "elapsed_s": time.perf_counter() - started,
+        "output": str(trajectory_path),
+    }
+    (output_dir / f"eval_main_{name}.summary.json").write_text(
+        json.dumps(summary, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    print(json.dumps(summary, indent=2, ensure_ascii=False), flush=True)
+    return summary
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="LLM-as-Jev with a retrieve-or-judge loop",
+    )
+    parser.add_argument(
+        "--benchmarks",
+        nargs="+",
+        default=["averitec", "fever", "scifact", "healthver"],
+    )
+    parser.add_argument("--model", default=DEFAULT_MODEL)
+    parser.add_argument("--reranker", default=DEFAULT_RERANKER)
+    parser.add_argument("--limit", type=int, default=-1, help="<=0 means the full split")
+    parser.add_argument("--output-dir", default="")
+    parser.add_argument("--fs_limit", type=int, default=0)
+    parser.add_argument("--bm25-k", type=int, default=500)
+    parser.add_argument("--rerank-k", type=int, default=2)
+    parser.add_argument("--search-cap", type=int, default=3)
+    parser.add_argument("--rerank-batch-size", type=int, default=8)
+    args = parser.parse_args()
+    if args.bm25_k <= 0 or args.rerank_k <= 0 or args.search_cap <= 0:
+        raise ValueError("bm25-k, rerank-k, and search-cap must be positive")
+
+    model_name = Path(args.model).name
+    output_dir = (
+        Path(args.output_dir)
+        if args.output_dir
+        else Path(DEFAULT_OUTPUT_DIR) / model_name
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    jev = LLM_as_Jev(model_path=args.model)
+    reranker = Qwen3Reranker(
+        model_path=args.reranker,
+        batch_size=args.rerank_batch_size,
+    )
+    retriever = ClaimRetriever()
+    summaries: dict[str, dict] = {}
+    try:
+        for name in args.benchmarks:
+            examples, bench = load_benchmark(name, limit=args.limit)
+            print(f"{name}: {len(examples)} claims", flush=True)
+            few_shot = build_few_shot(
+                bench_cls=bench,
+                limit=args.fs_limit,
+                split="train",
+            )
+            summaries[name] = run_one(
+                examples=examples,
+                bench=bench,
+                jev=jev,
+                reranker=reranker,
+                retriever=retriever,
+                few_shot=few_shot,
+                output_dir=output_dir,
+                bm25_k=args.bm25_k,
+                rerank_k=args.rerank_k,
+                search_cap=args.search_cap,
+                model_path=args.model,
+                reranker_path=args.reranker,
+            )
+    finally:
+        retriever.close()
+
+    (output_dir / "eval_main_summary.json").write_text(
+        json.dumps(summaries, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    lines = [
+        "# LLM-as-Jev retrieve-or-judge loop",
+        "",
+        f"Model: `{args.model}`",
+        "",
+        f"Reranker: `{args.reranker}`",
+        "",
+        "| Benchmark | n | Accuracy | Macro-F1 | Errors |",
+        "|---|---:|---:|---:|---:|",
+    ]
+    for name, summary in summaries.items():
+        lines.append(
+            f"| {name} | {summary['n']} | {summary['accuracy']:.4f} | "
+            f"{summary['macro_f1']:.4f} | {summary['n_errors']} |"
+        )
+    for name, summary in summaries.items():
+        lines.extend([
+            "",
+            f"## {name}",
+            "",
+            "| Label | Precision | Recall | F1 |",
+            "|---|---:|---:|---:|",
+        ])
+        for label, metrics in summary["per_class"].items():
+            lines.append(
+                f"| {label} | {metrics['precision']:.4f} | "
+                f"{metrics['recall']:.4f} | {metrics['f1']:.4f} |"
+            )
+    (output_dir / "eval_main_summary.md").write_text(
+        "\n".join(lines) + "\n",
+        encoding="utf-8",
+    )
+    print("wrote", output_dir, flush=True)
+
+
+if __name__ == "__main__":
+    main()
