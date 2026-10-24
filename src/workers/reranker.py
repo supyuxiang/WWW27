@@ -126,11 +126,11 @@ class Qwen3Reranker(RerankerBase):
                 passage=passage,
                 aspect=aspect
             )
-
-        prompt = construct_prompt4reranking_without_aspect(
-            claim=claim,
-            passage=passage
-        )
+        else:
+            prompt = construct_prompt4reranking_without_aspect(
+                claim=claim,
+                passage=passage
+            )
         return prompt
 
 
