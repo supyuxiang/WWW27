@@ -20,6 +20,7 @@ from src.utils import (
     STOPWORDS,
     best_passage,
     tokenize,
+    load_corpus,
 )
 from src.config import (
     Document,
@@ -221,6 +222,51 @@ class SQLiteBM25Retriever(RetrieverBase):
             self.conn.close()
         except Exception:
             pass
+
+
+INDEX_ROOT = Path("/root/autodl-tmp/www27/index")
+SQLITE_INDEXES = {
+    "fever": INDEX_ROOT / "fever_fts.sqlite",
+    "averitec": INDEX_ROOT / "averitec_dev_fts.sqlite",
+}
+
+class ClaimRetriever:
+    """BM25 over a SQLite FTS index, or an in-memory index for small corpora."""
+
+    def __init__(self, max_passage_chars: int = 2000):
+        self.max_passage_chars = max_passage_chars
+        self._sqlite: dict[str, SQLiteBM25Retriever] = {}
+        self._memory: dict[str, BM25Retriever] = {}
+
+    def search(self, benchmark: str, claim: str, k: int) -> list[Passage]:
+        retriever = self._get(benchmark)
+        return retriever.search(
+            claim,
+            k=k,
+            max_passage_chars=self.max_passage_chars,
+        )
+
+    def _get(self, benchmark: str):
+        index = SQLITE_INDEXES.get(benchmark)
+        if index is not None:
+            if benchmark not in self._sqlite:
+                if not index.is_file():
+                    raise FileNotFoundError(index)
+                self._sqlite[benchmark] = SQLiteBM25Retriever(
+                    index,
+                    claim_scoped=False,
+                )
+            return self._sqlite[benchmark]
+        if benchmark not in self._memory:
+            documents = load_corpus(benchmark)
+            self._memory[benchmark] = BM25Retriever(documents)
+        return self._memory[benchmark]
+
+    def close(self) -> None:
+        for retriever in self._sqlite.values():
+            retriever.close()
+        self._sqlite.clear()
+
 
 
 def main():

@@ -12,7 +12,8 @@ from .llm_generator import (
 from .retriever import (
     BM25Retriever,
     BM25Index,
-    SQLiteBM25Retriever
+    SQLiteBM25Retriever,
+    ClaimRetriever,
 )
 from .reranker import Qwen3Reranker
 
@@ -28,5 +29,6 @@ __all__ = [
     'BM25Retriever',
     'BM25Index',
     'SQLiteBM25Retriever',
+    'ClaimRetriever',
     'Qwen3Reranker'
 ]
