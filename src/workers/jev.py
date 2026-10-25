@@ -78,13 +78,10 @@ class LLM_as_Jev(JevBase):
     def _option_token_ids(self, options: list[str]) -> torch.Tensor:
         token_ids: list[int] = []
         for option in options:
-            ids = self.tokenizer.encode(option, add_special_tokens=False)
-            if len(ids) != 1:
-                raise ValueError(
-                    f"option {option!r} tokenizes to {len(ids)} tokens, expected 1"
-                )
-            token_ids.append(ids[0])
-        return torch.tensor(token_ids, dtype=torch.long, device=self.device)
+            ids = self.tokenizer.encode(option, add_special_tokens=False) # tensor([[token_id]]), torch.Size([1,1])
+            assert len(ids) == 1, ids
+            token_ids.append(ids[0]) # torch.Size([1])
+        return torch.tensor(token_ids, dtype=torch.long, device=self.device) # torch.Size([num_token_ids])
 
     def score_options(
         self,
@@ -92,8 +89,8 @@ class LLM_as_Jev(JevBase):
         user_prompt: str,
         options: list[str]
     ) -> dict:
-        if not options:
-            raise ValueError("options must be non-empty")
+        assert options, options
+        
         prefix = format_prefix4jev(
             self.tokenizer,
             system_prompt,
@@ -107,13 +104,13 @@ class LLM_as_Jev(JevBase):
                 input_ids=prefix_ids,
                 use_cache=False,
                 return_dict=True,
-            ).logits[:, -1, :].float()
-        scores = F.log_softmax(logits, dim=-1)[0, option_ids]
-        probs = F.softmax(scores, dim=-1)
+            ).logits[:, -1, :].float() # 1, vocab_size
+        scores = F.log_softmax(logits, dim=-1)[0, option_ids] # (num_options,)
+        probs = F.softmax(scores, dim=-1) # (num_options,)
         return dict(
             probs=probs,
             scores=scores,
-            best_idx=int(torch.argmax(probs)),
+            best_idx =int(torch.argmax(probs)),
         )
 
     def decode(self, tokens: list[int]) -> str:
@@ -391,7 +388,7 @@ class Kev(JevBase):
 
 
 def main():
-    model = LLM_as_Jev(model_path = '/root/autodl-tmp/models/Qwen2.5-7B-Instruct')
+    model = LLM_as_Jev(model_path = '/root/autodl-tmp/models/Qwen2.5-7B-Instruct',device=torch.device('cpu'))
     system_prompt = '你是一个新闻的判断者，善于判断新闻的正确性'
     user_prompt = '新闻：美国总统特朗普出生于2024年12月11日。 \n这个新闻是对的吗？给出你的选择: [1]True,[2]False'
     options=['1','2']
