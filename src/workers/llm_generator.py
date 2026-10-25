@@ -175,14 +175,14 @@ class VanillaGenerator(GeneratorBase):
         self,
         model_path: str | Path,
         max_new_tokens: int = 1024,
-        device: torch.device | None = None,
+        device: torch.device = torch.device('cuda'),
+        dtype = torch.bfloat16,
         enable_thinking: bool = False,
-        dtype: torch.dtype | None = None,
     ):
         self.max_new_tokens = max_new_tokens
+        self.device = device
+        self.dtype = dtype
         self.enable_thinking = enable_thinking
-        self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.dtype = dtype or (torch.bfloat16 if self.device.type == "cuda" else torch.float32)
         self.llm_name = Path(model_path).name
         self.tokenizer = load_tokenizer(model_path)
         self.tokenizer.padding_side = "left"
