@@ -15,7 +15,7 @@ MODELS=(
     '/root/autodl-tmp/models/Qwen3-14B'
     '/root/autodl-tmp/models/Qwen3.5-4B'
     '/root/autodl-tmp/models/Llama-3.2-3B-Instruct'
-    '/root/autodl-tmp/models/Mistral-7B-Instruct-v0.3'
+    # '/root/autodl-tmp/models/Mistral-7B-Instruct-v0.3'
 )
 
 TOKENS=(
