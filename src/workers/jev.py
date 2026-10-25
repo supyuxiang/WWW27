@@ -442,7 +442,6 @@ def _load_state_dict(path: Path) -> dict[str, torch.Tensor]:
 ################    api jev     #################
 # TypeSafe System One: POST /v1/systemone
 # https://docs.typesafe.ai/primitives/choice
-# 开源客户端与字段约定同 jaredpalmer/kev 的 kev/api.py、kev/predictors.py。
 
 class API_Jev(JevBase):
     """闭源 Jev。一次 choice，返回与 LLM_as_Jev 相同的 probs / scores / best_idx。"""
