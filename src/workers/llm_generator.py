@@ -228,13 +228,11 @@ class VanillaGenerator(GeneratorBase):
                 do_sample=False,
                 pad_token_id=self.tokenizer.pad_token_id,
             )
-        pad_id = self.tokenizer.pad_token_id
         texts: list[str] = []
         for row in range(len(prompts)):
             generated = output[row, prompt_width:].tolist()
-            if pad_id is not None:
-                while generated and generated[-1] == pad_id:
-                    generated.pop()
+            while generated and generated[-1] == self.tokenizer.pad_token_id:
+                generated.pop()
             texts.append(
                 self.tokenizer.decode(generated, skip_special_tokens=True).strip()
             )
