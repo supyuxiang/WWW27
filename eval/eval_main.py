@@ -27,24 +27,16 @@ from src.utils import (
     compute_accuracy,
     compute_f1,
     load_benchmark,
-    load_corpus,
     per_class_scores,
 )
 from src.workers import (
-    BM25Retriever,
     LLM_as_Jev,
     Qwen3Reranker,
-    SQLiteBM25Retriever,
+    ClaimRetriever
 )
 
-INDEX_ROOT = Path("/root/autodl-tmp/www27/index")
-DEFAULT_MODEL = "/root/autodl-tmp/models/Qwen3-8B"
-DEFAULT_RERANKER = "/root/autodl-tmp/models/Qwen3-Reranker-4B"
 DEFAULT_OUTPUT_DIR = "/root/autodl-tmp/www27/results/eval_main"
-SQLITE_INDEXES = {
-    "fever": INDEX_ROOT / "fever_fts.sqlite",
-    "averitec": INDEX_ROOT / "averitec_dev_fts.sqlite",
-}
+
 # prompt4jev_whether_retrieval lists WHETHER_RETRIEVAL in insertion order.
 RETRIEVAL_OPTION_INDEX = 0
 
@@ -53,51 +45,6 @@ def _as_floats(value: Any) -> list[float]:
     if hasattr(value, "detach"):
         value = value.detach().float().cpu().tolist()
     return [float(item) for item in value]
-
-
-class ClaimRetriever:
-    """BM25 over a SQLite FTS index, or an in-memory index for small corpora."""
-
-    def __init__(self, max_passage_chars: int = 2000):
-        self.max_passage_chars = max_passage_chars
-        self._sqlite: dict[str, SQLiteBM25Retriever] = {}
-        self._memory: dict[str, BM25Retriever] = {}
-
-    def search(
-        self,
-        benchmark: str,
-        claim: str,
-        k: int,
-        exclude_ids: set[str] | None = None,
-    ) -> list[Passage]:
-        retriever = self._get(benchmark)
-        return retriever.search(
-            claim,
-            k=k,
-            exclude_ids=exclude_ids,
-            max_passage_chars=self.max_passage_chars,
-        )
-
-    def _get(self, benchmark: str):
-        index = SQLITE_INDEXES.get(benchmark)
-        if index is not None:
-            if benchmark not in self._sqlite:
-                if not index.is_file():
-                    raise FileNotFoundError(index)
-                self._sqlite[benchmark] = SQLiteBM25Retriever(
-                    index,
-                    claim_scoped=False,
-                )
-            return self._sqlite[benchmark]
-        if benchmark not in self._memory:
-            documents = load_corpus(benchmark)
-            self._memory[benchmark] = BM25Retriever(documents)
-        return self._memory[benchmark]
-
-    def close(self) -> None:
-        for retriever in self._sqlite.values():
-            retriever.close()
-        self._sqlite.clear()
 
 
 def format_passages(passages: list[Passage]) -> str | None:
@@ -372,8 +319,8 @@ def main() -> None:
         nargs="+",
         default=["averitec", "fever", "scifact", "healthver"],
     )
-    parser.add_argument("--model", default=DEFAULT_MODEL)
-    parser.add_argument("--reranker", default=DEFAULT_RERANKER)
+    parser.add_argument("--model", default="/root/autodl-tmp/models/Qwen3-8B")
+    parser.add_argument("--reranker", default="/root/autodl-tmp/models/Qwen3-Reranker-4B")
     parser.add_argument("--limit", type=int, default=-1, help="<=0 means the full split")
     parser.add_argument("--output-dir", default="")
     parser.add_argument("--fs_limit", type=int, default=0)
