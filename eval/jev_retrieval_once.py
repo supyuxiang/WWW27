@@ -29,12 +29,7 @@ from src.workers import (
     ClaimRetriever
 )
 
-INDEX_ROOT = Path("/root/autodl-tmp/www27/index")
 DEFAULT_OUTPUT_DIR = "/root/autodl-tmp/www27/results/jev_retrieval_once"
-SQLITE_INDEXES = {
-    "fever": INDEX_ROOT / "fever_fts.sqlite",
-    "averitec": INDEX_ROOT / "averitec_dev_fts.sqlite",
-}
 
 
 def _as_floats(value: Any) -> list[float]:
