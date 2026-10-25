@@ -268,9 +268,100 @@ class ClaimRetriever:
         self._sqlite.clear()
 
 
+######################   demo   #######################
 
-def main():
-    pass
+def _show(title: str, passages: list[Passage]) -> None:
+    print(f"\n== {title} ==")
+    if not passages:
+        print("(no hits)")
+        return
+    for rank, passage in enumerate(passages, start=1):
+        snippet = " ".join(passage.text.split())
+        if len(snippet) > 180:
+            snippet = snippet[:180].rstrip() + "..."
+        print(f"{rank}. score={passage.score:.4f}  doc_id={passage.doc_id}")
+        if passage.title:
+            print(f"   title: {passage.title}")
+        print(f"   {snippet}")
+
+
+def main() -> None:
+    """Small walkthrough of the three search entry points.
+
+    BM25Retriever: in-memory index over a list of Document.
+    SQLiteBM25Retriever: the same search() on an FTS5 file.
+    ClaimRetriever: picks the sqlite index or builds BM25Retriever from the corpus.
+    """
+    documents = [
+        Document(
+            doc_id="apple",
+            title="Apples",
+            text="An apple is a red fruit that grows on a tree.",
+        ),
+        Document(
+            doc_id="banana",
+            title="Bananas",
+            text="A banana is a long yellow fruit.",
+        ),
+        Document(
+            doc_id="cherry",
+            title="Cherries",
+            text="A cherry is a small red fruit with a stone.",
+        ),
+        Document(
+            doc_id="embed",
+            title="FastEmbed",
+            text="FastEmbed supports sparse BM25 embeddings.",
+        ),
+    ]
+    query = "Which fruit is red?"
+    memory = BM25Retriever(documents)
+    top = memory.search(query, k=2, max_passage_chars=200)
+    _show("BM25Retriever.search(query, k=2)", top)
+    blocked = {top[0].doc_id} if top else set()
+    _show(
+        f"BM25Retriever.search(..., exclude_ids={blocked})",
+        memory.search(query, k=2, exclude_ids=blocked, max_passage_chars=200),
+    )
+
+    claim = "Nikolaj Coster-Waldau worked with the Fox Broadcasting Company."
+    fever_path = SQLITE_INDEXES["fever"]
+    if fever_path.is_file():
+        fever = SQLiteBM25Retriever(fever_path)
+        try:
+            _show(
+                "SQLiteBM25Retriever.search(claim, k=3)",
+                fever.search(claim, k=3, max_passage_chars=240),
+            )
+        finally:
+            fever.close()
+
+        routed = ClaimRetriever(max_passage_chars=240)
+        try:
+            _show(
+                'ClaimRetriever.search("fever", claim, k=3)',
+                routed.search("fever", claim, k=3),
+            )
+        finally:
+            routed.close()
+    else:
+        print(f"\nskip sqlite demo, missing {fever_path}")
+
+    averitec_path = SQLITE_INDEXES["averitec"]
+    if averitec_path.is_file():
+        averitec = SQLiteBM25Retriever(averitec_path, claim_scoped=True)
+        try:
+            row = averitec.conn.execute(
+                "SELECT claim_id, title FROM docs LIMIT 1"
+            ).fetchone()
+            if row and row[0]:
+                averitec.set_claim(str(row[0]))
+                _show(
+                    f'SQLiteBM25Retriever.set_claim({row[0]!r}).search(...)',
+                    averitec.search(str(row[1] or claim), k=2, max_passage_chars=240),
+                )
+        finally:
+            averitec.close()
 
 if __name__ == '__main__':
     main()
