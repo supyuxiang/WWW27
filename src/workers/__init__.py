@@ -6,7 +6,8 @@ from .jev import (
 )
 from .llm_generator import (
     VLLMGenerator,
-    APIGenerator
+    APIGenerator,
+    VanillaGenerator,
 )
 from .retriever import (
     BM25Retriever,
@@ -23,6 +24,7 @@ __all__ = [
     'Kev',
     'VLLMGenerator',
     'APIGenerator',
+    'VanillaGenerator',
     'BM25Retriever',
     'BM25Index',
     'SQLiteBM25Retriever',

@@ -15,6 +15,7 @@ os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")
 
 import torch
+from transformers import AutoModelForCausalLM
 from vllm import LLM, SamplingParams
 from openai import OpenAI
 
@@ -167,3 +168,76 @@ class APIGenerator(GeneratorBase):
             for future in as_completed(futures):
                 results[futures[future]] = future.result()
         return results
+
+
+class VanillaGenerator(GeneratorBase):
+    def __init__(
+        self,
+        model_path: str | Path,
+        max_new_tokens: int = 1024,
+        device: torch.device | None = None,
+        enable_thinking: bool = False,
+        dtype: torch.dtype | None = None,
+    ):
+        self.max_new_tokens = max_new_tokens
+        self.enable_thinking = enable_thinking
+        self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.dtype = dtype or (torch.bfloat16 if self.device.type == "cuda" else torch.float32)
+        self.llm_name = Path(model_path).name
+        self.tokenizer = load_tokenizer(model_path)
+        self.tokenizer.padding_side = "left"
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model_path,
+            dtype=self.dtype,
+            trust_remote_code=True,
+            local_files_only=True,
+        )
+        self.model.to(self.device)
+        self.model.eval()
+
+    def _format_one(self, user_prompt: str) -> str:
+        msg = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ]
+        kwargs: dict[str, Any] = {
+            "tokenize": False,
+            "add_generation_prompt": True,
+        }
+        if self.enable_thinking:
+            kwargs["enable_thinking"] = True
+
+        return self.tokenizer.apply_chat_template(
+            msg, **kwargs
+        )
+
+    def generate_batch(self, prompts: list[str]) -> list[str]:
+        formatted = [self._format_one(prompt) for prompt in prompts]
+        encoded = self.tokenizer(
+            formatted,
+            return_tensors="pt",
+            padding=True,
+            add_special_tokens=False,
+        )
+        encoded = {k: v.to(self.device) for k, v in encoded.items()}
+        prompt_width = int(encoded["input_ids"].shape[1])
+        with torch.inference_mode():
+            output = self.model.generate(
+                **encoded,
+                max_new_tokens=self.max_new_tokens,
+                do_sample=False,
+                pad_token_id=self.tokenizer.pad_token_id,
+            )
+        pad_id = self.tokenizer.pad_token_id
+        texts: list[str] = []
+        for row in range(len(prompts)):
+            generated = output[row, prompt_width:].tolist()
+            if pad_id is not None:
+                while generated and generated[-1] == pad_id:
+                    generated.pop()
+            texts.append(
+                self.tokenizer.decode(generated, skip_special_tokens=True).strip()
+            )
+        return texts
+
+        
