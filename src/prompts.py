@@ -158,7 +158,6 @@ def prompt4llm_judge(
     options = [f'{i+1}' for i in range(len(benchmark_cls.choice_dict))]
 
     labels = list(benchmark_cls.choice_dict)
-    lines=[f'Claim: {claim}']
     lines = [
         f'Claim: {claim}',
         'Decide which verdict applies to the claim.',
