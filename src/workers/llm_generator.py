@@ -227,7 +227,7 @@ class VanillaGenerator(GeneratorBase):
                 max_new_tokens=self.max_new_tokens,
                 do_sample=False,
                 pad_token_id=self.tokenizer.pad_token_id,
-            )
+            ) # (bsz, max_len)
         texts: list[str] = []
         for row in range(len(prompts)):
             generated = output[row, prompt_width:].tolist()
