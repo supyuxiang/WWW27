@@ -1,4 +1,4 @@
-# Doffy (Decoding-free Fact-Verifying)
+# Doffy (Decoding-free Fact-Verifying)————Under Review at WWW 2027 Short Paper Track
 
 ---
 
