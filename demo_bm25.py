@@ -19,6 +19,7 @@ def sparse_dot(query, document) -> float:
     )
 
 
+
 def main() -> None:
     model = SparseTextEmbedding(
         model_name=MODEL_NAME,
