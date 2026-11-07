@@ -285,8 +285,8 @@ def main() -> None:
         nargs="+",
         default=["averitec", "fever", "scifact", "healthver"],
     )
-    parser.add_argument("--model", default="/root/autodl-tmp/models/Qwen3-8B")
-    parser.add_argument("--reranker", default="/root/autodl-tmp/models/Qwen3-Reranker-4B")
+    parser.add_argument("--model", default="/home/yxfeng/models/Qwen3/Qwen3-8B")
+    parser.add_argument("--reranker", default="/home/yxfeng/models/Qwen3/Qwen3-Reranker-4B")
     parser.add_argument("--limit", type=int, default=-1, help="<=0 means the full split")
     parser.add_argument("--output-dir", "--output_dir", dest="output_dir", default="")
     parser.add_argument("--max_tokens", type=int, default=1024)

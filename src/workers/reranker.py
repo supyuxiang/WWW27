@@ -84,7 +84,7 @@ class RerankerBase(ABC):
 class Qwen3Reranker(RerankerBase):
     def __init__(
         self,
-        model_path: str = '/root/autodl-tmp/models/Qwen3-Reranker-4B',
+        model_path: str = '/home/yxfeng/models/Qwen3/Qwen3-Reranker-4B',
         batch_size: int = 16,
         max_length: int = 2048,
     ):
@@ -208,7 +208,7 @@ class Qwen3Reranker(RerankerBase):
 
 
 def main():
-    model_path = "/root/autodl-tmp/models/Qwen3-Reranker-0.6B"
+    model_path = "/home/yxfeng/models/Qwen3/Qwen3-Reranker-4B"
     reranker = Qwen3Reranker(model_path=model_path, batch_size=8, max_length=512)
 
     query = "Find evidence that the fruit is crimson."

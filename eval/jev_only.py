@@ -129,7 +129,7 @@ def main() -> None:
         default=["averitec", "fever", "scifact", "healthver"],
     )
     parser.add_argument("--jev_type", choices=["llm", "api"], default="llm")
-    parser.add_argument("--model_path", default="/root/autodl-tmp/models/Qwen3-8B")
+    parser.add_argument("--model_path", default="/home/yxfeng/models/Qwen3/Qwen3-8B")
     parser.add_argument("--limit", type=int, default=-1, help="<=0 means the full split")
     parser.add_argument("--output_dir", default="")
     parser.add_argument("--fs_limit", type=int, default=0)

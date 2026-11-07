@@ -1,4 +1,4 @@
-﻿model_path: /root/autodl-tmp/models/Qwen3-8B
+﻿model_path: /home/yxfeng/models/Qwen3/Qwen3-8B
 data_path: data/sample_claims.jsonl
 corpus_path: data/sample_corpus.jsonl
 output_path: outputs/predictions.jsonl

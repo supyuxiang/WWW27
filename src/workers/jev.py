@@ -1242,7 +1242,7 @@ class Kev(torch.nn.Module, JevBase):
 
 
 def main():
-    model = LLM_as_Jev(model_path = '/root/autodl-tmp/models/Qwen2.5-7B-Instruct',device=torch.device('cpu'))
+    model = LLM_as_Jev(model_path = '/home/yxfeng/models/Qwen2.5/Qwen2.5-7B-Instruct',device=torch.device('cpu'))
     system_prompt = '你是一个新闻的判断者，善于判断新闻的正确性'
     user_prompt = '新闻：美国总统特朗普出生于2024年12月11日。 \n这个新闻是对的吗？给出你的选择: [1]True,[2]False'
     options=['1','2']

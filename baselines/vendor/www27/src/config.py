@@ -13,7 +13,7 @@ import yaml
 
 @dataclass
 class JarvConfig:
-    model_path: str = '/root/autodl-tmp/models/Qwen3-8B'
+    model_path: str = '/home/yxfeng/models/Qwen3/Qwen3-8B'
     data_path: str = 'data/sample_claims.jsonl'
     corpus_path: str = 'data/sample_corpus.jsonl'
     output_path: str = 'outputs/predictions.jsonl'

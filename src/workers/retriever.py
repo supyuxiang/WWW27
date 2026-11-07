@@ -30,7 +30,7 @@ from src.config import (
 RETRIEVER_MODEL_NAME = os.environ.get("FASTEMBED_BM25_MODEL", "Qdrant/bm25")
 RETRIEVER_MODEL_CACHE = os.environ.get(
     "FASTEMBED_BM25_CACHE",
-    "/root/autodl-tmp/models/fastembed",
+    "/home/yxfeng/models/fastembed",
 )
 RETRIEVER_ENCODE_BATCH_SIZE = int(os.environ.get("FASTEMBED_BM25_BATCH_SIZE", "256"))
 

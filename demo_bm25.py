@@ -8,7 +8,7 @@ from fastembed import SparseTextEmbedding
 
 
 MODEL_NAME = "Qdrant/bm25"
-MODEL_CACHE = "/root/autodl-tmp/models/fastembed"
+MODEL_CACHE = "/home/yxfeng/models/fastembed"
 
 
 def sparse_dot(query, document) -> float:

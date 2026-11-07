@@ -35,7 +35,7 @@ from src.workers import (
     ClaimRetriever
 )
 
-DEFAULT_OUTPUT_DIR = "/root/autodl-tmp/www27/results/eval_main"
+DEFAULT_OUTPUT_DIR = "/data3/yxfeng/www27/results/eval_main"
 
 # prompt4jev_whether_retrieval lists WHETHER_RETRIEVAL in insertion order.
 RETRIEVAL_OPTION_INDEX = 0
@@ -319,8 +319,8 @@ def main() -> None:
         nargs="+",
         default=["averitec", "fever", "scifact", "healthver"],
     )
-    parser.add_argument("--model", default="/root/autodl-tmp/models/Qwen3-8B")
-    parser.add_argument("--reranker", default="/root/autodl-tmp/models/Qwen3-Reranker-4B")
+    parser.add_argument("--model", default="/home/yxfeng/models/Qwen3/Qwen3-8B")
+    parser.add_argument("--reranker", default="/home/yxfeng/models/Qwen3/Qwen3-Reranker-4B")
     parser.add_argument("--limit", type=int, default=-1, help="<=0 means the full split")
     parser.add_argument("--output-dir", default="")
     parser.add_argument("--fs_limit", type=int, default=0)

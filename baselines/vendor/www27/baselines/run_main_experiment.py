@@ -51,7 +51,7 @@ BENCHMARKS = ('averitec', 'fever', 'scifact')
 METHODS = ('llm_jev', 'retrieve_once_jev', 'jarv', 'jarv_gen')
 BENCHMARK_ROOT = Path('/root/autodl-tmp/www27/benchmark')
 INDEX_ROOT = Path('/root/autodl-tmp/www27/index')
-DEFAULT_MODEL = '/root/autodl-tmp/models/Qwen2.5-3B-Instruct'
+DEFAULT_MODEL = '/home/yxfeng/models/Qwen2.5/Qwen2.5-3B-Instruct'
 REUSED_JEV_ROOT = Path(
     '/root/autodl-tmp/exp_results/model_sweep_20261019_020225/'
     'Qwen2.5-3B-instruct/jev'

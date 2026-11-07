@@ -99,7 +99,7 @@ def run_one(
 def main() -> None:
     parser = argparse.ArgumentParser(description="LLM generation with gold evidence")
     parser.add_argument("--benchmarks", nargs="+", default=["averitec", "fever", "scifact", 'healthver'])
-    parser.add_argument("--model", default="/root/autodl-tmp/models/Qwen3-8B")
+    parser.add_argument("--model", default="/home/yxfeng/models/Qwen3/Qwen3-8B")
     parser.add_argument("--limit", type=int, default=-1)
     parser.add_argument("--output_dir", default="/root/autodl-tmp/www27/llm_gen_only")
     parser.add_argument("--max_tokens", type=int, default=1024)

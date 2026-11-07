@@ -176,7 +176,7 @@ def main() -> int:
     parser.add_argument('--benchmark', choices=['cfever', 'quantemp_plus'], required=True)
     parser.add_argument('--split-file', required=True)
     parser.add_argument('--index', required=True)
-    parser.add_argument('--model', default='/root/autodl-tmp/models/Qwen2.5-3B-Instruct')
+    parser.add_argument('--model', default='/home/yxfeng/models/Qwen2.5/Qwen2.5-3B-Instruct')
     parser.add_argument('--repeat-model', required=True)
     parser.add_argument('--output-root', required=True)
     parser.add_argument('--limit', type=int, default=20)

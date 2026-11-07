@@ -25,7 +25,7 @@ from src.prompts import SYSTEM_PROMPT, judge_prompt
 from src.utils.metrics import accuracy, macro_f1
 
 BENCHMARK_ROOT = Path('/root/autodl-tmp/www27/benchmark')
-DEFAULT_MODEL = '/root/autodl-tmp/models/Qwen3-8B'
+DEFAULT_MODEL = '/home/yxfeng/models/Qwen3/Qwen3-8B'
 
 
 def _normalize_label(value: object) -> str | None:

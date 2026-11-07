@@ -29,7 +29,7 @@ class Passage:
 
 @dataclass
 class WWW27Config:
-    model_path: str = "/root/autodl-tmp/models/Qwen3-8B"
+    model_path: str = "/home/yxfeng/models/Qwen3/Qwen3-8B"
     data_path: str = "data/sample_claims.jsonl"
     corpus_path: str = "data/sample_corpus.jsonl"
     output_path: str = "outputs/predictions.jsonl"
@@ -45,7 +45,7 @@ class WWW27Config:
     queries_per_aspect: int = 1
     passages_per_query: int = 2
     bm25_candidates: int = 500
-    rerank_model_path: str = "/root/autodl-tmp/models/Qwen3-Reranker-0.6B"
+    rerank_model_path: str = "/home/yxfeng/models/Qwen3/Qwen3-Reranker-4B"
     search_cap: int = 3
     max_claim_chars: int = 1500
     max_passage_chars: int = 800

@@ -3,19 +3,21 @@
 LIMIT=1000
 
 MODELS=(
-    '/root/autodl-tmp/models/Qwen2.5-1.5B-Instruct'
-    '/root/autodl-tmp/models/Qwen2.5-3B-Instruct'
-    '/root/autodl-tmp/models/Qwen2.5-7B-Instruct'
-    '/root/autodl-tmp/models/Qwen2.5-14B-Instruct'
-    # '/root/autodl-tmp/models/Qwen2.5-32B-Instruct'
-    '/root/autodl-tmp/models/Qwen3-0.6B'
-    '/root/autodl-tmp/models/Qwen3-1.7B'
-    '/root/autodl-tmp/models/Qwen3-4B'
-    '/root/autodl-tmp/models/Qwen3-8B'
-    '/root/autodl-tmp/models/Qwen3-14B'
-    '/root/autodl-tmp/models/Qwen3.5-4B'
-    '/root/autodl-tmp/models/Llama-3.2-3B-Instruct'
-    # '/root/autodl-tmp/models/Mistral-7B-Instruct-v0.3'
+    '/home/yxfeng/models/Qwen2.5/Qwen2.5-0.5B-Instruct'
+    '/home/yxfeng/models/Qwen2.5/Qwen2.5-1.5B-Instruct'
+    '/home/yxfeng/models/Qwen2.5/Qwen2.5-3B-Instruct'
+    '/home/yxfeng/models/Qwen2.5/Qwen2.5-7B-Instruct'
+    '/home/yxfeng/models/Qwen2.5/Qwen2.5-14B-Instruct'
+    '/home/yxfeng/models/Qwen2.5/Qwen2.5-32B-Instruct'
+    # '/root/autodl-tmp/models/Qwen3-0.6B'  # not in /home/yxfeng/models
+    # '/root/autodl-tmp/models/Qwen3-1.7B'  # not in /home/yxfeng/models
+    '/home/yxfeng/models/Qwen3/Qwen3-4B'
+    '/home/yxfeng/models/Qwen3/Qwen3-8B'
+    '/home/yxfeng/models/Qwen3/Qwen3-14B'
+    '/home/yxfeng/models/Qwen3.8/Qwen3.8-27B'
+    # '/root/autodl-tmp/models/Qwen3.5-4B'  # not in /home/yxfeng/models
+    '/home/yxfeng/models/Llama-3.2/Llama-3.2-3B'
+    # '/home/yxfeng/models/mistral/Mistral-7B-Instruct-v0.2'
 )
 
 for MODEL in "${MODELS[@]}"; do
