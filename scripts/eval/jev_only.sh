@@ -25,10 +25,10 @@ for MODEL in "${MODELS[@]}"; do
     echo "开始运行模型: $MODEL"
     echo "========================================"
 
-    /root/autodl-tmp/miniconda3/envs/www27/bin/python /root/yxfeng/www27/eval/jev_only.py \
+    /home/yxfeng/miniconda3/envs/www27/bin/python /home/yxfeng/www27/eval/jev_only.py \
         --model_path "$MODEL" \
         --limit $LIMIT \
-        --output_dir "/root/autodl-tmp/www27/jev_only/$(basename "$MODEL")"
+        --output_dir "/data3/yxfeng/www27/jev_only/$(basename "$MODEL")"
 done
 
 echo "所有模型运行完毕！"

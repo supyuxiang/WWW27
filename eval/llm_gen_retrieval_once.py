@@ -33,7 +33,7 @@ from src.workers import (
     VLLMGenerator,
 )
 
-DEFAULT_OUTPUT_DIR = "/root/autodl-tmp/www27/results/llm_gen_retrieval_once"
+DEFAULT_OUTPUT_DIR = "/data3/yxfeng/www27/results/llm_gen_retrieval_once"
 
 
 def retrieve_once(

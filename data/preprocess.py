@@ -327,7 +327,10 @@ def build_claims() -> dict:
 
 
 def main() -> None:
-    build_claims()
+    raise SystemExit(
+        "Refusing to run data/preprocess.py. It expects the FEVER wiki and the "
+        "2GB climate-fever corpus. Use data/prepare_small.py on a compute node."
+    )
 
 
 if __name__ == "__main__":

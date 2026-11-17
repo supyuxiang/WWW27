@@ -23,7 +23,7 @@ ASSISTANT_PREFILL = "Best answer: ["
 
 WHETHER_RETRIEVAL = {
     'retrieval': 'Retrieve external evidence.',
-    'skip':'Skip external retireval.'
+    'skip': 'Skip external retrieval.'
 }
 WHAT_ASPECT = {
     item.name: item.definition for item in ASPECTS
@@ -167,10 +167,10 @@ def prompt4llm_judge(
         lines.append(
             f'[{i+1}] {k} (description: {v}).'
         )
-    if evidence is not None and isinstance(evidence, str):
+    if evidence:
         lines.append(f'Current evidence:\n{evidence}')
 
-    if few_shot is not None and isinstance(few_shot, str):
+    if few_shot:
         lines.append(
             f'-'*50 +
             f'\nFor example:\n{few_shot}\n' +
@@ -209,10 +209,10 @@ def prompt4jev_judge(
         lines.append(
             f'[{i+1}] {k} (description: {v}).'
         )
-    if evidence is not None and isinstance(evidence, str):
+    if evidence:
         lines.append(f'Current Evidence: {evidence}')
-    
-    if few_shot is not None and isinstance(few_shot, str):
+
+    if few_shot:
         lines.append(
             f'-'*50 +
             f'\nFor example:\n{few_shot}\n' +
@@ -237,16 +237,13 @@ def format_prefix4jev(
     kwargs = dict(
         tokenize=False,
         add_generation_prompt=True,
+        enable_thinking=enable_thinking,
     )
-
-    # 我们项目不用这个
-    if enable_thinking:
-        kwargs['enable_thinking'] = True
-
-    formatted = tokenizer.apply_chat_template(
-        msg,
-        **kwargs,
-    )
+    try:
+        formatted = tokenizer.apply_chat_template(msg, **kwargs)
+    except TypeError:
+        kwargs.pop("enable_thinking", None)
+        formatted = tokenizer.apply_chat_template(msg, **kwargs)
     if prefill:
         formatted += prefill
     return formatted
@@ -294,6 +291,47 @@ def format_prefix4jev(
 #         few_shot=None,
 #         evidence=evidence,
 #     )
+
+
+def prompt4aspect_check(
+    claim: str,
+    aspect: Aspect,
+    evidence: str | None = None,
+) -> tuple[str, str, list[str]]:
+    """Binary check. Option 1 is Check, so probs[0] is p(Check)."""
+    system_prompt = SYSTEM_PROMPT
+    options = ["1", "2"]
+    lines = [f"Claim: {claim}"]
+    if evidence:
+        lines.append(f"Current evidence: {evidence}")
+    lines.extend([
+        f"Aspect: {aspect.name}",
+        f"Definition: {aspect.definition}",
+        "Does this aspect of the claim still need external evidence?",
+        "[1] Check (description: This aspect is unresolved and needs retrieval.)",
+        "[2] Skip (description: Current evidence is enough for this aspect, or it does not apply.)",
+    ])
+    return system_prompt, "\n".join(lines), options
+
+
+def prompt4aspect_query(
+    claim: str,
+    aspect: Aspect,
+    evidence: str | None = None,
+) -> tuple[str, str]:
+    system_prompt = (
+        "Write one short search query that would retrieve evidence about the "
+        "requested aspect of the claim. Output only the query."
+    )
+    lines = [
+        f"Claim: {claim}",
+        f"Aspect: {aspect.name}",
+        f"Definition: {aspect.definition}",
+    ]
+    if evidence:
+        lines.append(f"Evidence already collected:\n{evidence}")
+    lines.append("Search query:")
+    return system_prompt, "\n".join(lines)
 
 
 def prompt4jev_whether_retrieval(

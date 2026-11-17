@@ -11,8 +11,6 @@ from collections import defaultdict
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")
 
-from fastembed import SparseTextEmbedding
-
 ROOT = Path(__file__).parents[2].resolve()
 sys.path.insert(0,str(ROOT))
 
@@ -60,6 +58,8 @@ class BM25Retriever(RetrieverBase):
         self.k1 = k1
         self.b = b
         self.postings: dict[int, list[tuple[int, float]]] = defaultdict(list)
+        from fastembed import SparseTextEmbedding
+
         self._model = SparseTextEmbedding(
             model_name=RETRIEVER_MODEL_NAME,
             cache_dir=RETRIEVER_MODEL_CACHE,
@@ -224,48 +224,47 @@ class SQLiteBM25Retriever(RetrieverBase):
             pass
 
 
-INDEX_ROOT = Path("/root/autodl-tmp/www27/index")
+from src.paths import INDEX as INDEX_ROOT
+from src.workers.dense_pool import DensePool
+
 SQLITE_INDEXES = {
     "fever": INDEX_ROOT / "fever_fts.sqlite",
     "averitec": INDEX_ROOT / "averitec_dev_fts.sqlite",
 }
 
 class ClaimRetriever:
-    """BM25 over a SQLite FTS index, or an in-memory index for small corpora."""
+    """Claim-level dense pool built by Qwen3-Embedding-4B.
+
+    Search does not call BM25. Pools are precomputed so the embedding model
+    is not loaded next to the judge and the reranker.
+    """
 
     def __init__(self, max_passage_chars: int = 2000):
         self.max_passage_chars = max_passage_chars
-        self._sqlite: dict[str, SQLiteBM25Retriever] = {}
-        self._memory: dict[str, BM25Retriever] = {}
+        self._pools: dict[str, DensePool] = {}
 
-    def search(self, benchmark: str, claim: str, k: int) -> list[Passage]:
-        retriever = self._get(benchmark)
-        return retriever.search(
+    def search(
+        self,
+        benchmark: str,
+        claim: str,
+        k: int,
+        exclude_ids: set[str] | None = None,
+        claim_id: str | None = None,
+    ) -> list[Passage]:
+        pool = self._pools.get(benchmark)
+        if pool is None:
+            pool = DensePool(benchmark)
+            self._pools[benchmark] = pool
+        return pool.search(
             claim,
             k=k,
+            exclude_ids=exclude_ids,
+            claim_id=claim_id,
             max_passage_chars=self.max_passage_chars,
         )
 
-    def _get(self, benchmark: str):
-        index = SQLITE_INDEXES.get(benchmark)
-        if index is not None:
-            if benchmark not in self._sqlite:
-                if not index.is_file():
-                    raise FileNotFoundError(index)
-                self._sqlite[benchmark] = SQLiteBM25Retriever(
-                    index,
-                    claim_scoped=False,
-                )
-            return self._sqlite[benchmark]
-        if benchmark not in self._memory:
-            documents = load_corpus(benchmark)
-            self._memory[benchmark] = BM25Retriever(documents)
-        return self._memory[benchmark]
-
     def close(self) -> None:
-        for retriever in self._sqlite.values():
-            retriever.close()
-        self._sqlite.clear()
+        self._pools.clear()
 
 
 ######################   demo   #######################

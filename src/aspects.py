@@ -48,11 +48,16 @@ ASPECT_BY_NAME: dict[str, Aspect] = {aspect.name: aspect for aspect in ASPECTS}
 def select_aspects(
     scores: torch.Tensor,
     tau_aspect: float,
-    limit: int=-1,
-) -> list[str]:
-    _, ranked_idx = torch.sort(input=scores, dim=-1)
-    chosen = [idx for idx in ranked_idx if float(scores[idx]) >= tau_aspect]
-    if limit >= 0:
+    limit: int = -1,
+) -> list[int]:
+    ranked_idx = torch.argsort(scores, dim=-1, descending=True)
+    chosen = [
+        int(idx) for idx in ranked_idx.tolist()
+        if float(scores[idx]) >= tau_aspect
+    ]
+    if not chosen and ranked_idx.numel():
+        chosen = [int(ranked_idx[0])]
+    if limit > 0:
         chosen = chosen[:limit]
     return chosen
 
@@ -67,12 +72,7 @@ class AspectSelector:
         tau_aspect: float,
         limit:int=-1
     ) -> list[str] | None:
-        _, ranked_idx = torch.sort(input=scores, dim=-1)
-        chosen = [
-            idx for idx in ranked_idx if float(scores[idx] >= tau_aspect)
-        ]
-        if limit>0 and len(chosen) > limit:
-            chosen = chosen[:limit]
+        chosen = select_aspects(scores, tau_aspect, limit)
         return chosen
 
     @staticmethod

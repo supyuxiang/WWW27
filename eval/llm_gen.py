@@ -14,12 +14,13 @@ from src.prompts import (
     prompt4llm_judge,
     build_few_shot,
 )
+from src.paths import RESULTS
 from src.utils import (
     Benchmark,
     compute_accuracy,
     compute_f1,
     per_class_scores,
-    load_benchmark,
+    iter_split,
     parse_generation
 )
 from src.workers import (
@@ -34,10 +35,26 @@ def run_one(
     generator: VLLMGenerator | APIGenerator,
     few_shot: str,
     output_dir: Path,
-    is_cot: bool = False
+    is_cot: bool = False,
+    closed_book: bool = True,
+    shard: int = 0,
+    num_shards: int = 1,
 ) -> dict[str,Any]:
     name = bench.name
     output_dir.mkdir(parents=True, exist_ok=True)
+    if not examples:
+        return {
+            "benchmark": name,
+            "n": 0,
+            "invalid": 0,
+            "accuracy": 0.0,
+            "macro_f1": 0.0,
+            "per_class": {},
+            "gold_counts": {},
+            "prediction_counts": {},
+            "few_shot": few_shot,
+            "output": "",
+        }
     labels = list(bench.choice_dict)
 
     prompts: list[tuple[str, str, list[str]]] = [
@@ -45,7 +62,7 @@ def run_one(
             benchmark_cls=bench,
             claim=item["claim"],
             few_shot=few_shot,
-            evidence=item["evidence"],
+            evidence=None if closed_book else item.get("evidence"),
             is_cot=is_cot
         )
         for item in examples
@@ -56,7 +73,8 @@ def run_one(
     gold: list[str] = []
     pred: list[str] = []
     invalid = 0
-    trajectory_path = output_dir / f"llm_gen_only_{name}.jsonl"
+    suffix = f".shard{shard}" if num_shards > 1 else ""
+    trajectory_path = output_dir / f"llm_gen_only_{name}{suffix}.jsonl"
     with trajectory_path.open("w", encoding="utf-8") as handle:
         for item, generation in zip(examples, generations):
             prediction = parse_generation(generation, labels)
@@ -88,7 +106,7 @@ def run_one(
         "few_shot": few_shot,
         "output": str(trajectory_path),
     }
-    (output_dir / f"llm_gen_only_{name}.summary.json").write_text(
+    (output_dir / f"llm_gen_only_{name}{suffix}.summary.json").write_text(
         json.dumps(summary, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
@@ -98,10 +116,10 @@ def run_one(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="LLM generation with gold evidence")
-    parser.add_argument("--benchmarks", nargs="+", default=["averitec", "fever", "scifact", 'healthver'])
+    parser.add_argument("--benchmarks", nargs="+", default=["scifact", "averitec", "healthver", "climate_fever"])
     parser.add_argument("--model", default="/home/yxfeng/models/Qwen3/Qwen3-8B")
     parser.add_argument("--limit", type=int, default=-1)
-    parser.add_argument("--output_dir", default="/root/autodl-tmp/www27/llm_gen_only")
+    parser.add_argument("--output_dir", default=str(RESULTS / "llm_gen"))
     parser.add_argument("--max_tokens", type=int, default=1024)
     parser.add_argument("--tensor_parallel_size", type=int, default=1)
     parser.add_argument("--gpu_memory_utilization", type=float, default=0.92)
@@ -114,6 +132,10 @@ def main() -> None:
         default=False,
     )
     parser.add_argument('--is_cot', action='store_true')
+    parser.add_argument("--shard", type=int, default=0)
+    parser.add_argument("--num-shards", type=int, default=1)
+    parser.add_argument("--binary", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--closed-book", action=argparse.BooleanOptionalAction, default=True)
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
@@ -143,23 +165,36 @@ def main() -> None:
 
     summaries: dict[str, dict] = {}
     for name in args.benchmarks:
-        examples, bench = load_benchmark(name, limit=args.limit)
-        print(f"{name}: {len(examples)} claims", flush=True)
-        few_shot = build_few_shot(
-            bench_cls=bench,
-            limit=args.fs_limit,
-            split="train",
+        examples, bench, stats = iter_split(
+            name,
+            split="dev",
+            limit=args.limit,
+            binary=args.binary,
+            shard=args.shard,
+            num_shards=args.num_shards,
         )
+        print(f"{name}: {len(examples)} claims {stats}", flush=True)
+        few_shot = ""
+        if args.fs_limit > 0:
+            few_shot = build_few_shot(
+                bench_cls=bench,
+                limit=args.fs_limit,
+                split="train",
+            )
         summaries[name] = run_one(
             examples=examples,
             bench=bench,
             generator=generator,
             few_shot=few_shot,
             output_dir=output_dir,
-            is_cot=args.is_cot
+            is_cot=args.is_cot,
+            closed_book=args.closed_book,
+            shard=args.shard,
+            num_shards=args.num_shards,
         )
 
-    (output_dir / "llm_gen_only_summary.json").write_text(
+    suffix = f".shard{args.shard}" if args.num_shards > 1 else ""
+    (output_dir / f"llm_gen_only_summary{suffix}.json").write_text(
         json.dumps(summaries, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
@@ -187,7 +222,7 @@ def main() -> None:
                 f"| {label} | {metrics['precision']:.4f} | "
                 f"{metrics['recall']:.4f} | {metrics['f1']:.4f} |"
             )
-    (output_dir / "llm_gen_only_summary.md").write_text(
+    (output_dir / f"llm_gen_only_summary{suffix}.md").write_text(
         "\n".join(lines) + "\n",
         encoding="utf-8",
     )

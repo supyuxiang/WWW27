@@ -13,23 +13,21 @@ from tqdm import tqdm
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.workers import (
-    LLM_as_Jev,
-    API_Jev,
-)
+from src.workers.jev import API_Jev, LLM_as_Jev
 from src.prompts import (
     prompt4jev_judge,
     build_few_shot,
 )
+from src.paths import RESULTS
 from src.utils import (
     Benchmark,
     compute_accuracy,
     compute_f1,
-    load_benchmark,
+    iter_split,
     per_class_scores,
 )
 
-DEFAULT_OUTPUT_DIR = "/root/autodl-tmp/www27/jev_only"
+DEFAULT_OUTPUT_DIR = str(RESULTS / "jev_only")
 
 
 def _as_floats(value: Any) -> list[float]:
@@ -45,19 +43,35 @@ def run_one(
     few_shot: str,
     output_dir: Path,
     model_path: str = "",
+    closed_book: bool = True,
+    shard: int = 0,
+    num_shards: int = 1,
 ) -> dict[str, Any]:
     name = bench.name
     output_dir.mkdir(parents=True, exist_ok=True)
+    if not examples:
+        return {
+            "benchmark": name,
+            "n": 0,
+            "accuracy": 0.0,
+            "macro_f1": 0.0,
+            "per_class": {},
+            "gold_counts": {},
+            "prediction_counts": {},
+            "few_shot": few_shot,
+            "elapsed_s": 0.0,
+            "output": "",
+        }
     labels = list(bench.choice_dict)
     prompts = [
         prompt4jev_judge(
             benchmark_cls=bench,
             claim=item["claim"],
-            few_shot=few_shot,
-            evidence=item["evidence"],
+            few_shot=few_shot or None,
+            evidence=None if closed_book else item.get("evidence"),
         )
         for item in examples
-    ]  # list[tuple[str, str, list[str]]]
+    ]
     if not prompts:
         raise ValueError(f"{name}: no examples")
 
@@ -71,7 +85,8 @@ def run_one(
 
     gold: list[str] = []
     pred: list[str] = []
-    trajectory_path = output_dir / f"jev_only_{name}.jsonl"
+    suffix = f".shard{shard}" if num_shards > 1 else ""
+    trajectory_path = output_dir / f"jev_only_{name}{suffix}.jsonl"
     started = time.perf_counter()
     with trajectory_path.open("w", encoding="utf-8") as handle:
         for item, (system_prompt, user_prompt, prompt_options) in tqdm(
@@ -113,7 +128,7 @@ def run_one(
         "elapsed_s": time.perf_counter() - started,
         "output": str(trajectory_path),
     }
-    (output_dir / f"jev_only_{name}.summary.json").write_text(
+    (output_dir / f"jev_only_{name}{suffix}.summary.json").write_text(
         json.dumps(summary, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
@@ -126,13 +141,17 @@ def main() -> None:
     parser.add_argument(
         "--benchmarks",
         nargs="+",
-        default=["averitec", "fever", "scifact", "healthver"],
+        default=["scifact", "averitec", "healthver", "climate_fever"],
     )
     parser.add_argument("--jev_type", choices=["llm", "api"], default="llm")
     parser.add_argument("--model_path", default="/home/yxfeng/models/Qwen3/Qwen3-8B")
     parser.add_argument("--limit", type=int, default=-1, help="<=0 means the full split")
     parser.add_argument("--output_dir", default="")
     parser.add_argument("--fs_limit", type=int, default=0)
+    parser.add_argument("--shard", type=int, default=0)
+    parser.add_argument("--num-shards", type=int, default=1)
+    parser.add_argument("--binary", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--closed-book", action=argparse.BooleanOptionalAction, default=True)
     args = parser.parse_args()
 
     model_name = Path(args.model_path).name
@@ -150,13 +169,22 @@ def main() -> None:
         
     summaries: dict[str, dict] = {}
     for name in args.benchmarks:
-        examples, bench = load_benchmark(name, limit=args.limit)
-        print(f"{name}: {len(examples)} claims", flush=True)
-        few_shot = build_few_shot(
-            bench_cls=bench,
-            limit=args.fs_limit,
-            split="train",
+        examples, bench, stats = iter_split(
+            name,
+            split="dev",
+            limit=args.limit,
+            binary=args.binary,
+            shard=args.shard,
+            num_shards=args.num_shards,
         )
+        print(f"{name}: {len(examples)} claims {stats}", flush=True)
+        few_shot = ""
+        if args.fs_limit > 0:
+            few_shot = build_few_shot(
+                bench_cls=bench,
+                limit=args.fs_limit,
+                split="train",
+            )
         summaries[name] = run_one(
             examples=examples,
             bench=bench,
@@ -164,9 +192,13 @@ def main() -> None:
             few_shot=few_shot,
             output_dir=output_dir,
             model_path=args.model_path,
+            closed_book=args.closed_book,
+            shard=args.shard,
+            num_shards=args.num_shards,
         )
 
-    (output_dir / "jev_only_summary.json").write_text(
+    suffix = f".shard{args.shard}" if args.num_shards > 1 else ""
+    (output_dir / f"jev_only_summary{suffix}.json").write_text(
         json.dumps(summaries, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
@@ -196,7 +228,7 @@ def main() -> None:
                 f"| {label} | {metrics['precision']:.4f} | "
                 f"{metrics['recall']:.4f} | {metrics['f1']:.4f} |"
             )
-    (output_dir / "jev_only_summary.md").write_text(
+    (output_dir / f"jev_only_summary{suffix}.md").write_text(
         "\n".join(lines) + "\n",
         encoding="utf-8",
     )

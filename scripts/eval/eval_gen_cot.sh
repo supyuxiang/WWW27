@@ -38,11 +38,11 @@ for num_tokens in "${TOKENS[@]}"; do
             THINKING_ARGS+=(--enable_thinking)
         fi
 
-        /root/autodl-tmp/miniconda3/envs/www27/bin/python /root/yxfeng/www27/eval/llm_gen.py \
+        /home/yxfeng/miniconda3/envs/www27/bin/python /home/yxfeng/www27/eval/llm_gen.py \
             --model "$MODEL" \
             --limit $LIMIT \
             --max_tokens "$num_tokens" \
-            --output_dir "/root/autodl-tmp/www27/llm_gen_only_cot/tokens${num_tokens}/$(basename "$MODEL")" \
+            --output_dir "/data3/yxfeng/www27/llm_gen_only_cot/tokens${num_tokens}/$(basename "$MODEL")" \
             --is_cot \
             "${THINKING_ARGS[@]}"
     done

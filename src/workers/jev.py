@@ -118,7 +118,37 @@ class LLM_as_Jev(JevBase):
             ).logits[:, -1, :].float() # 1, vocab_size
         scores = F.log_softmax(logits, dim=-1)[0, option_ids] # (num_options,)
         return _distribution(scores)
-    
+
+    def generate(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        max_new_tokens: int = 32,
+    ) -> str:
+        """Greedy decode. Used only to build a retrieval query."""
+        prefix = format_prefix4jev(
+            self.tokenizer,
+            system_prompt,
+            user_prompt,
+            prefill=None,
+            enable_thinking=False,
+        )
+        input_ids = self.encode(prefix).to(torch.long).view(1, -1)
+        with torch.inference_mode():
+            output = self.model.generate(
+                input_ids=input_ids,
+                max_new_tokens=max_new_tokens,
+                do_sample=False,
+                use_cache=True,
+                pad_token_id=self.tokenizer.pad_token_id,
+                eos_token_id=self.tokenizer.eos_token_id,
+            )
+        new_tokens = output[0, input_ids.shape[-1]:]
+        text = self.tokenizer.decode(new_tokens, skip_special_tokens=True)
+        text = text.replace("<think>", " ").replace("</think>", " ")
+        text = " ".join(text.split()).strip().strip('"')
+        return text[:300]
+
     def decode(self, tokens: list[int]) -> str:
         return self.tokenizer.decode(tokens, skip_special_tokens=True)
 

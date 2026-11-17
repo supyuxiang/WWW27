@@ -2,7 +2,7 @@ import json
 import re
 import sys
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 ROOT = Path(__file__).parent.parent.resolve()
 sys.path.insert(0,str(ROOT))
@@ -17,8 +17,16 @@ class Benchmark:
     train_path: str | Path | None = None
 
 
-PREPROCESSED_ROOT = Path('/root/autodl-tmp/benchmark_dsh/preprocessed')
-CORPUS_ROOT = PREPROCESSED_ROOT / 'corpus'
+from src.paths import PREPROCESSED as PREPROCESSED_ROOT
+
+CORPUS_ROOT = PREPROCESSED_ROOT / "corpus"
+
+BINARY_CHOICES = {
+    "Real": "The central factual content of the claim is true.",
+    "Fake": "The central factual content of the claim is false.",
+}
+_REAL_LABELS = {"supported", "supports", "support"}
+_FAKE_LABELS = {"refuted", "refutes", "refute", "contradict", "contradicts"}
 
 
 # averitec, fever, scifact, healthver
@@ -98,6 +106,24 @@ BENCHMARKS = [
         doc=(
             'HealthVer checks real-world health claims against scientific evidence. '
             'This is the 1000-claim test sample.'
+        ),
+    ),
+
+    Benchmark(
+        name='climate_fever',
+        path=PREPROCESSED_ROOT / 'claims/climate_fever/test.jsonl',
+        train_path=PREPROCESSED_ROOT / 'claims/climate_fever/test.jsonl',
+        choice_dict={
+            'SUPPORTS': 'The evidence supports the claim.',
+            'REFUTES': 'The evidence refutes the claim.',
+            'NOT ENOUGH INFO': (
+                'The evidence does not contain enough information to support or refute the claim.'
+            ),
+            'DISPUTED': 'Reliable sources disagree about the claim.',
+        },
+        doc=(
+            'Climate-FEVER claims. The retrieval corpus is the evidence sentences shipped '
+            'with the claims file. The multi-million-passage Wikipedia dump is not used.'
         ),
     ),
 ]
@@ -194,6 +220,84 @@ def load_corpus(
             break
     return documents
 
+
+def to_binary_label(label: str | None) -> str | None:
+    key = str(label or "").strip().casefold()
+    if key in _REAL_LABELS:
+        return "Real"
+    if key in _FAKE_LABELS:
+        return "Fake"
+    return None
+
+
+def iter_split(
+    benchmark_name: str,
+    split: str = "dev",
+    limit: int = -1,
+    binary: bool = True,
+    shard: int = 0,
+    num_shards: int = 1,
+) -> tuple[list[dict], Benchmark, dict]:
+    """Load claims, optionally keep the binary Real/Fake subset, then shard.
+
+    Coverage counts are computed before ``limit`` and sharding.
+    """
+    examples, bench = load_benchmark(benchmark_name, limit=-1, split=split)
+    stats = {
+        "benchmark": benchmark_name,
+        "split": split,
+        "n_all": len(examples),
+        "binary": binary,
+        "shard": shard,
+        "num_shards": num_shards,
+    }
+    if binary:
+        kept = []
+        for example in examples:
+            mapped = to_binary_label(example.get("label"))
+            if mapped is None:
+                continue
+            row = dict(example)
+            row["label_raw"] = example.get("label")
+            row["label"] = mapped
+            kept.append(row)
+        stats["n_excluded"] = stats["n_all"] - len(kept)
+        stats["n_binary"] = len(kept)
+        examples = kept
+        bench = replace(bench, choice_dict=dict(BINARY_CHOICES))
+    else:
+        stats["n_excluded"] = 0
+        stats["n_binary"] = len(examples)
+    stats["coverage_excluded"] = stats["n_excluded"] / max(stats["n_all"], 1)
+    if limit > 0:
+        examples = examples[:limit]
+    if num_shards > 1:
+        if shard < 0 or shard >= num_shards:
+            raise ValueError(f"shard {shard} is outside 0..{num_shards - 1}")
+        examples = [
+            example
+            for index, example in enumerate(examples)
+            if index % num_shards == shard
+        ]
+    stats["n_shard"] = len(examples)
+    return examples, bench, stats
+
+
+def load_done_ids(path: str | Path) -> set[str]:
+    done: set[str] = set()
+    file_path = Path(path)
+    if not file_path.exists():
+        return done
+    with file_path.open(encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                done.add(str(json.loads(line).get("id")))
+            except json.JSONDecodeError:
+                continue
+    return done
 
 
 # metrics
