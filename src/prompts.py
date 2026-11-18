@@ -334,6 +334,30 @@ def prompt4aspect_query(
     return system_prompt, "\n".join(lines)
 
 
+def prompt4evidence_vote(
+    claim: str,
+    evidence: str,
+    labels: list[str],
+) -> tuple[str, str, list[str]]:
+    """One passage. Option order is the verdict labels, then Insufficient."""
+    system_prompt = SYSTEM_PROMPT
+    lines = [
+        f"Claim: {claim}",
+        "Decide whether this single piece of evidence is enough to judge the claim.",
+        f"Current Evidence:\n{evidence}",
+    ]
+    for index, label in enumerate(labels, start=1):
+        lines.append(
+            f"[{index}] {label} (description: This evidence is sufficient to call the claim {label}.)"
+        )
+    lines.append(
+        f"[{len(labels) + 1}] Insufficient "
+        "(description: This evidence does not decide the claim.)"
+    )
+    options = [str(index) for index in range(1, len(labels) + 2)]
+    return system_prompt, "\n".join(lines), options
+
+
 def prompt4jev_whether_retrieval(
     claim: str,
     evidence: str | None

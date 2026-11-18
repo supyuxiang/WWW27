@@ -53,6 +53,7 @@ def main() -> None:
             f"\terrors={errors}",
             flush=True,
         )
+    directory.mkdir(parents=True, exist_ok=True)
     out = directory / "merged.json"
     out.write_text(json.dumps(report, indent=2), encoding="utf-8")
     print("wrote", out, flush=True)

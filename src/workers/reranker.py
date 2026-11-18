@@ -87,10 +87,14 @@ class Qwen3Reranker(RerankerBase):
         model_path: str = '/home/yxfeng/models/Qwen3/Qwen3-Reranker-4B',
         batch_size: int = 16,
         max_length: int = 2048,
+        device: str | None = None,
     ):
         self.batch_size = batch_size
         self.max_length = max_length
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if device is None:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        else:
+            self.device = torch.device(device)
         if self.device.type == 'cpu': print('using cpu!!!')
 
         self.tokenizer = load_tokenizer(model_path)

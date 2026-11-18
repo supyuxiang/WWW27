@@ -203,15 +203,21 @@ class VanillaGenerator(GeneratorBase):
         kwargs: dict[str, Any] = {
             "tokenize": False,
             "add_generation_prompt": True,
+            "enable_thinking": self.enable_thinking,
         }
-        if self.enable_thinking:
-            kwargs["enable_thinking"] = True
+        try:
+            return self.tokenizer.apply_chat_template(msg, **kwargs)
+        except TypeError:
+            kwargs.pop("enable_thinking", None)
+            return self.tokenizer.apply_chat_template(msg, **kwargs)
 
-        return self.tokenizer.apply_chat_template(
-            msg, **kwargs
-        )
+    def generate_batch(self, prompts: list[str], batch_size: int = 4) -> list[str]:
+        texts: list[str] = []
+        for start in range(0, len(prompts), batch_size):
+            texts.extend(self._generate_chunk(prompts[start:start + batch_size]))
+        return texts
 
-    def generate_batch(self, prompts: list[str]) -> list[str]:
+    def _generate_chunk(self, prompts: list[str]) -> list[str]:
         formatted = [self._format_one(prompt) for prompt in prompts]
         encoded = self.tokenizer(
             formatted,

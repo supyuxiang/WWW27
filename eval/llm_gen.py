@@ -23,16 +23,13 @@ from src.utils import (
     iter_split,
     parse_generation
 )
-from src.workers import (
-    VLLMGenerator,
-    APIGenerator,
-)
+from src.workers.llm_generator import APIGenerator, VanillaGenerator, VLLMGenerator
 
 
 def run_one(
     examples: list[dict],
     bench: Benchmark,
-    generator: VLLMGenerator | APIGenerator,
+    generator: VLLMGenerator | APIGenerator | VanillaGenerator,
     few_shot: str,
     output_dir: Path,
     is_cot: bool = False,
@@ -119,13 +116,13 @@ def main() -> None:
     parser.add_argument("--benchmarks", nargs="+", default=["scifact", "averitec", "healthver", "climate_fever"])
     parser.add_argument("--model", default="/home/yxfeng/models/Qwen3/Qwen3-8B")
     parser.add_argument("--limit", type=int, default=-1)
-    parser.add_argument("--output_dir", default=str(RESULTS / "llm_gen"))
+    parser.add_argument("--output_dir", "--output-dir", default=str(RESULTS / "llm_gen"))
     parser.add_argument("--max_tokens", type=int, default=1024)
     parser.add_argument("--tensor_parallel_size", type=int, default=1)
     parser.add_argument("--gpu_memory_utilization", type=float, default=0.92)
     parser.add_argument("--max_model_len", type=int, default=8192)
     parser.add_argument("--fs_limit", type=int, default=0)
-    parser.add_argument("--generator", choices=["vllm", "api"], default="vllm")
+    parser.add_argument("--generator", choices=["vllm", "api", "hf"], default="vllm")
     parser.add_argument(
         "--enable_thinking",
         action=argparse.BooleanOptionalAction,
@@ -148,6 +145,12 @@ def main() -> None:
             gpu_memory_utilization=args.gpu_memory_utilization,
             max_model_len=args.max_model_len,
             max_tokens=args.max_tokens,
+            enable_thinking=args.enable_thinking,
+        )
+    elif args.generator == "hf":
+        generator = VanillaGenerator(
+            model_path=args.model,
+            max_new_tokens=args.max_tokens,
             enable_thinking=args.enable_thinking,
         )
     elif args.generator == 'api':

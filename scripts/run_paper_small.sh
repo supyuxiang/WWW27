@@ -43,9 +43,9 @@ CUDA_VISIBLE_DEVICES=0 "$PY" eval/eval_main.py \
   --limit 2 \
   --binary \
   --fs-limit 0 \
-  --bm25-k 500 \
+  --bm25-k 128 \
   --rerank-k 2 \
-  --rerank-batch-size 16 \
+  --rerank-batch-size 32 \
   --rerank-max-length 512 \
   --output-dir "$RES/smoke" \
   > "$LOG/smoke.log" 2>&1
@@ -85,12 +85,12 @@ run_shards() {
 echo "[doffy] $(date -Is)"
 run_shards eval/eval_main.py "$RES/doffy/Qwen3-8B" doffy \
   --fs-limit 0 \
-  --bm25-k 500 \
+  --bm25-k 128 \
   --rerank-k 2 \
   --search-cap 3 \
   --alpha 3 \
   --tau-aspect 0.5 \
-  --rerank-batch-size 16 \
+  --rerank-batch-size 32 \
   --rerank-max-length 512
 doffy_status=$?
 echo "[doffy exit $doffy_status] $(date -Is)"
@@ -98,9 +98,9 @@ echo "[doffy exit $doffy_status] $(date -Is)"
 echo "[retrieve-once] $(date -Is)"
 run_shards eval/jev_retrieval_once.py "$RES/retrieve_once/Qwen3-8B" retrieve_once \
   --fs-limit 0 \
-  --bm25-k 500 \
+  --bm25-k 128 \
   --rerank-k 2 \
-  --rerank-batch-size 16 \
+  --rerank-batch-size 32 \
   --rerank-max-length 512
 once_status=$?
 echo "[retrieve-once exit $once_status] $(date -Is)"
